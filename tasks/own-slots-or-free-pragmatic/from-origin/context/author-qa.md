@@ -87,3 +87,31 @@ Pragmatic's games. The request names two alternatives and does not say which one
 
 Rules of the first own slot — theme, number of reels and win lines, return-to-player percentage, maximum win, bonus
 features, how many slots — and how bets on own games count toward bonus wagering.
+
+## Round 2 — the game window (slots-server half)
+
+Raised while planning the game server and the twelve game windows. Both questions are about what the player sees
+inside the game window; the requirements above leave them open.
+
+### Q6. What does the player see after the connection drops in the middle of a spin?
+
+- **Requirements say:** "WHEN the same spin request is repeated, THE SYSTEM SHALL return the first outcome and SHALL NOT debit, draw or credit again." (R9, `feature.md`); "Once the bet is debited the round is only ever completed" (business rules, `feature.md`).
+- **Today:** each game remembers the spin's identity only while one press of SPIN is being processed. It tries three times and then shows "Connection lost. Your balance is safe and correct, reconnect to continue." The next press of SPIN is a brand-new spin. **Unchecked:** how often a spin is lost after the casino already took the bet; nothing reachable measures it.
+- **Why it matters:** example: the player presses SPIN at bet 1.00, the casino takes the 1.00 and draws a win of 5.00, then the player's Wi-Fi drops before the result arrives. The casino always completes that round, so 5.00 reaches the balance. What differs is whether the player ever sees what they won.
+- **Options:**
+  - A. The game window keeps the identity of the unfinished spin for as long as the window stays open or is reloaded in the same tab. After reconnecting, SPIN (or reopening the window) shows that same round's result and nothing is charged twice. If the tab was closed in between, the win still reaches the balance but is not shown.
+  - B. Every press of SPIN is a new spin. The interrupted round is still completed and paid, but the player never sees it; the balance simply rises by 5.00 with no visible cause.
+- **Recommended:** A — the player sees what they were paid for; cost is one small stored value per window.
+- **Answer:** (answered by user) A — "все да" (2026-11-06, accepting the recommended option of every question of the round).
+
+### Q7. In which language are the game windows?
+
+- **Requirements say:** nothing. The launch link carries the player's language (`lang`), per the contract with the game hub.
+- **Today:** all twelve games are in English only: the information screen, the paytable, the game messages. No translation exists. The messages this task adds — "not enough funds" with a Deposit button, "reopen the game", "win being credited" — would be new texts.
+- **Why it matters:** example: a player whose site is in Russian opens Tropic Escape and sees English paytable text and an English "Not enough funds" message with an English "Deposit" button.
+- **Options:**
+  - A. English only; the player's language is ignored.
+  - B. The three or four new messages are translated into the site's languages (you name the list); the games' own screens stay English.
+  - C. Everything translated, including the information screen of every game.
+- **Recommended:** A — the games ship English-only; B or C add a translation catalogue and a decision on who owns the texts.
+- **Answer:** (answered by user) A — "все да" (2026-11-06, accepting the recommended option of every question of the round).

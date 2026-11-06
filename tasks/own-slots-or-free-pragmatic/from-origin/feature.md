@@ -41,7 +41,9 @@ The casino gets twelve ready-made slots of its own, played for the player's real
 - **A drawn round is never voided.** Once the bet is debited the round is only ever completed: a call whose outcome is unknown is repeated until the other side answers. A definite refusal of the bet (insufficient funds, limit, blocked player) ends the round unplayed and shows no outcome.
 - **A refused win is never final.** A win can be refused after its bet moved money (the operator disabled for a moment, the site currency switched, the player record missing). The round then stays "win pending" and is retried with growing pauses and an alert; only a conflict or an unreadable request is parked for an operator.
 - **A pending win may outlive the session.** The retry carries the launch token of the round it belongs to, and the hub restores the lapsed session only for that token.
-- **A refused bet is final for its round.** Repeating it after a deposit would debit it; the next spin is a new round with a new id.
+- **A refused bet is final for its round.** Repeating it after a deposit would debit it; the next spin is a new round with a new id. A bet the hub cannot take because of a fault of the setup (wrong signature, unknown or switched-off partner, address not allowed) ends its round unplayed in the same way and shows "game unavailable"; it is not repeated later, so the player is never debited for a round they were told did not happen. The one exception is a bet that an earlier attempt may already have debited (outcome unknown): that is repeated until the hub answers.
+- **A spin cut off by a lost connection.** The game window keeps the identity of an unfinished spin for as long as the window stays open or is reloaded in the same tab, so that after reconnecting the player sees that round's result and nothing is charged twice. If the tab was closed in between, the win still reaches the balance but is not shown (author answer, Round 2).
+- **Language.** The game windows are in English only, whatever language the player's site is in (author answer, Round 2).
 - **What a retry means.** Every spin request carries a key; the same key returns the first answer. Every money call carries a transaction id derived from the round, and the same id returns the first answer and moves nothing.
 - **Worst round.** Free games can retrigger without limit and there is no cap, so the largest documented round is 10 000 times the bet, 100 000 at the top bet (Golden Papyrus). The casino carries that tail.
 - **Credit timing.** The win is on the balance when the spin returns, even when the player closes the window in the middle of a bonus. The animation only shows what is already credited.
@@ -62,6 +64,7 @@ The casino gets twelve ready-made slots of its own, played for the player's real
 - Pragmatic: stays switched off and untouched until its contract details exist.
 - A cap on a round's win: decided against.
 - Game coins or any non-USD balance: the site balance is the only money.
+- Translating the game windows: decided against, English only (author answer, Round 2).
 - Per-game artwork beyond what the collection ships, and new games: later.
 - Deployment sizing (how much CPU, memory, database and certificate the game server needs on its subdomain): worked out at deploy time, not here.
 - Re-clearing the commercial-slot provenance of the maths: accepted for an internal network.

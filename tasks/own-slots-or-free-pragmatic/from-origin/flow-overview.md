@@ -26,8 +26,8 @@ A provider with no route is invisible to the operator; the sync creates the rout
 ## Flow 2 — Opening a game
 
 ```
-Player → platform /casino/play/<symbol> → GatewayService.LaunchCasino
-  └─ hub: session saved in Redis (token, operator, partner, game, player, USD)
+Player → platform /casino/play/<identity> → GatewayService.LaunchCasino(<identity>)    e.g. apexslots_tropic_escape
+  └─ hub: session saved in Redis (token, operator, partner, game, player, USD); the game's link maps the identity to the vendor symbol (tropic-escape)
        └─ OwnslotsPartner::launch → <playUrl>/play/<symbol>?token=…&lang=…&lobby=…
 Platform: url → iframe      Game page loads from the game server
 Game page → game server: session → hub /webhook/<partner>/balance {token} → balance

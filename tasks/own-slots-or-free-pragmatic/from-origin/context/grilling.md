@@ -90,6 +90,12 @@ Author questions from `author-qa.md` thereby all answered: Q4 (guests) is moot â
 - Game launch by token, the session lifetime, what the game does when the balance is too low for a bet (message only, or also a jump to the deposit page).
 - Webhook protocol between the game server and the hub; deployment and secrets of the game server; tile images and the CDN base.
 
+## Round 6 â€” spec review SR8 (hub half, 2026-11-06)
+
+| Q | Topic | Answer |
+|---|---|---|
+| Q1 | Parser of the contract test | A (recommended): `serde_norway` into `serde_json::Value`; "parses as OpenAPI 3.1" = `openapi` starts with `3.1.`, `paths` and `components` exist, every internal `$ref` resolves. Not `oas3`, not the deprecated `serde_yaml` |
+
 ## Open after round 2
 
 - Which of the 11 games launch; where the game server's code lives (new repo or beside the hub); how a bonus round's state is held; how the browser client is changed to take a server result; deployment and secrets of the game server.

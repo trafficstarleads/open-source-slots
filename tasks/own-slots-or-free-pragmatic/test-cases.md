@@ -74,7 +74,7 @@
 - **Тип:** БД
 - **Требование:** FR5 — «WHEN a valid spin arrives, THE SYSTEM SHALL draw the round on the server with a cryptographically secure random source, save it under a round id the server mints, and only then call the hub `bet`, and SHALL NOT take an outcome, a bet or a win from the browser. (R7)»
 - **Приоритет:** P1
-- **Предусловия:** Токен `tok-slow`: заглушка отвечает на ставку через 12 секунд.
+- **Предусловия:** Токен `tok-slow`: первый вызов ставки заглушка отвечает через 12 секунд (позже таймаута 10 секунд).
 - **Нужно на стенде:** локальный стенд: Postgres, собранные бандлы игр (`npm --prefix server run build:games`), сервер игр с заглушкой хаба (`npm --prefix server run dev:stub`: заглушка на порту 9100, сервер игр на порту 3000)
 - **Шаги:**
   1. Отправить спин со ставкой 100 центов, токеном `tok-slow` и ключом `s1`.
@@ -186,16 +186,16 @@
 
 ### SLOTS-SERVER-TC17 — Ставка без ответа повторяется, браузер получает «занято»
 - **Тип:** API
-- **Требование:** FR12 — «IF the hub gives no definite answer to a bet (`BUSY`, `INTERNAL`, no answer), THEN THE SYSTEM SHALL repeat the same call with the same transaction id until it is answered, within the spin request every 0.2 seconds growing to 1 second while 8 seconds last and afterwards by the sweeper, and SHALL answer the browser `busy` after those 8 seconds so that the browser can repeat the same spin key. (R11)»
+- **Требование:** FR12 — «IF the hub gives no definite answer to a bet (`BUSY`, `INTERNAL`, no answer), THEN THE SYSTEM SHALL repeat the same call with the same transaction id until it is answered, within the spin request every 0.2 seconds growing to 1 second while the bet budget of 10 seconds (`HUB_CALL_TIMEOUT_MS`, longer than the hub's own 8 second wait for a busy wallet) lasts and afterwards by the sweeper, and SHALL answer the browser `busy` after that budget so that the browser can repeat the same spin key. (R11)»
 - **Приоритет:** P1
-- **Предусловия:** Токен `tok-slow`.
+- **Предусловия:** Токен `tok-slow`: первый вызов транзакции отвечает через 12 секунд и заглушка уже списала ставку; повтор той же транзакции заглушка отвечает сразу.
 - **Нужно на стенде:** локальный стенд: Postgres, собранные бандлы игр (`npm --prefix server run build:games`), сервер игр с заглушкой хаба (`npm --prefix server run dev:stub`: заглушка на порту 9100, сервер игр на порту 3000)
 - **Шаги:**
   1. Отправить спин с ключом `b1`, не отменяя запрос.
   2. Засечь время до ответа браузеру.
   3. Через 15 секунд отправить тот же ключ `b1` ещё раз.
   4. Открыть список вызовов заглушки.
-- **Ожидаемый результат:** Первый ответ приходит примерно через 8 секунд: `error: busy`. Второй ответ содержит раунд. Вызовы `bet` повторяются с одним и тем же `transactionId`, списание произошло один раз.
+- **Ожидаемый результат:** Первый ответ приходит примерно через 10 секунд: `error: busy`. Второй ответ содержит раунд. Вызовы `bet` повторяются с одним и тем же `transactionId`, списание произошло один раз.
 
 ### SLOTS-SERVER-TC18 — Выигрыш, который не зачислился сразу, дозачисляется повторами
 - **Тип:** API
@@ -259,14 +259,14 @@
 
 ### SLOTS-SERVER-TC23 — Скрипт загрузки отправляет двенадцать плиток в хаб
 - **Тип:** API
-- **Требование:** FR17 — «WHEN the upload script runs, THE SYSTEM SHALL send the tile image of each of the twelve games to the hub's `GameService.UpdateImage` under the game's symbol, image key `1x1` and the shared catalogue key. (R1)»
+- **Требование:** FR17 — «WHEN the upload script runs, THE SYSTEM SHALL send the tile image of each of the twelve games to the hub's `GameService.UpdateImage` under the game's hub identity (`x-catalog.games[].identity` of the contract, not its symbol), image key `1x1` and the shared catalogue key. (R1)»
 - **Приоритет:** P2
 - **Предусловия:** Хаб (dev) запущен с `CATALOG_ADMIN_KEY` и хранилищем картинок, игры уже в каталоге после `sync`.
 - **Нужно на стенде:** dev-хаб с каталогом `APEXSLOTS` и S3; `CATALOG_GRPC_ADDRESS`, `CATALOG_ADMIN_KEY` в окружении
 - **Шаги:**
   1. Выполнить `npm --prefix server run upload-tiles`.
   2. Открыть список игр провайдера в лобби или `ListCasino`.
-- **Ожидаемый результат:** Скрипт завершается с кодом 0 и печатает по пути на каждый из двенадцати символов. У каждой игры в каталоге есть картинка 1x1. С неверным ключом скрипт завершается с ошибкой и именем символа.
+- **Ожидаемый результат:** Скрипт завершается с кодом 0 и печатает по пути на каждую из двенадцати игр (идентификаторы вида `apexslots_tropic_escape`). У каждой игры в каталоге есть картинка 1x1. С неверным ключом скрипт завершается с ошибкой и идентификатором игры.
 
 ### SLOTS-SERVER-TC24 — Окно игры берёт токен из адреса и показывает баланс с сервера
 - **Тип:** UI
@@ -337,7 +337,7 @@
   3. Нажать DEPOSIT.
 - **Ожидаемый результат:** Барабаны не двигаются, показаны NOT ENOUGH FUNDS и кнопка DEPOSIT. После нажатия страница-хозяин (порт 9100) записывает сообщение `apex:deposit`.
 
-### SLOTS-SERVER-TC30 — Сообщение о пополнении уходит только по кнопке и при пустом lobby идёт любому адресату
+### SLOTS-SERVER-TC30 — Сообщение о пополнении уходит только по кнопке и не зависит от lobby
 - **Тип:** UI
 - **Требование:** FR23 — «IF the balance shown is below the bet and the balance the server returns when asked is below the bet too, THEN THE SYSTEM SHALL refuse the spin without moving the reels, show "NOT ENOUGH FUNDS" and a DEPOSIT button, and WHEN the player presses the button THE SYSTEM SHALL post `{type: 'apex:deposit'}` to the parent window. (R6)»
 - **Приоритет:** P2
@@ -347,7 +347,8 @@
   1. Открыть `http://localhost:9100/host/stellar-sevens?token=tok-poor&lobby=`.
   2. Нажать SPIN и убедиться, что сообщение страница-хозяин не получила.
   3. Нажать DEPOSIT.
-- **Ожидаемый результат:** До нажатия кнопки никаких сообщений нет. После нажатия страница-хозяин получила `apex:deposit` (адресат не ограничен, так как `lobby` пуст). Со значением `lobby` адреса страницы-хозяина сообщение доходит так же.
+  4. Повторить с `http://localhost:9100/host/stellar-sevens?token=tok-poor&lobby=https://www.example.com/lobby/page` и с `lobby`, равным адресу страницы-хозяина.
+- **Ожидаемый результат:** До нажатия кнопки никаких сообщений нет. После нажатия страница-хозяин каждый раз получает `apex:deposit` без других полей, при любом значении `lobby`.
 
 ### SLOTS-SERVER-TC31 — Просроченная сессия: сообщение и отсутствие спина
 - **Тип:** UI
@@ -421,9 +422,9 @@
 
 ### SLOTS-SERVER-TC37 — Ставка, на которую хаб отвечает 403, закрывает раунд без списания
 - **Тип:** API
-- **Требование:** FR29 — «IF the hub answers a bet with 401, 403 or 404 (nothing moved), THEN THE SYSTEM SHALL answer `unavailable`, mark the round refused and never repeat that bet. (R11)»
+- **Требование:** FR29 — «IF the hub answers a bet with 401, 403 or 404 (nothing moved) and every earlier send of that bet was answered "nothing moved", THEN THE SYSTEM SHALL answer `unavailable`, mark the round refused and never repeat that bet. (R11)»
 - **Приоритет:** P1
-- **Предусловия:** Токен `tok-forbidden`: на каждую ставку заглушка отвечает 403 без тела.
+- **Предусловия:** Токен `tok-forbidden`: на каждую ставку заглушка отвечает 403 без тела; прежних попыток этой ставки нет.
 - **Нужно на стенде:** локальный стенд: Postgres, собранные бандлы игр (`npm --prefix server run build:games`), сервер игр с заглушкой хаба (`npm --prefix server run dev:stub`: заглушка на порту 9100, сервер игр на порту 3000)
 - **Шаги:**
   1. Отправить спин с токеном `tok-forbidden` и ключом `f1`.
@@ -431,18 +432,30 @@
   3. Подождать минуту и открыть список вызовов заглушки и строку `rounds`.
 - **Ожидаемый результат:** Оба ответа: `error: unavailable`. Вызовов `bet` в списке заглушки ровно один (sweeper не повторяет), статус раунда `refused`, `result` пуст, баланс не изменился.
 
-### SLOTS-SERVER-TC38 — Две копии сервера не повторяют один вызов
+### SLOTS-SERVER-TC38 — Ставка с неизвестным исходом не закрывается отказом 403
+- **Тип:** API
+- **Требование:** FR31 — «IF an earlier send of a bet was not answered "nothing moved" (it ended with `INTERNAL`, a timeout or a transport error, or it never got an answer because the process stopped) and a later attempt gets 401, 403 or 404, THEN THE SYSTEM SHALL keep the round `bet_pending` and keep repeating that bet with the same transaction id until the hub gives a definite answer, logging `bet_pending_alert`, because the bet may already be debited. (R11)»
+- **Приоритет:** P1
+- **Предусловия:** Токен `tok-timeout-then-forbidden`: первая ставка раунда отвечает через 15 секунд (позже таймаута 10 секунд, заглушка уже списала ставку), дальше заглушка отвечает 403.
+- **Нужно на стенде:** локальный стенд: Postgres, собранные бандлы игр (`npm --prefix server run build:games`), сервер игр с заглушкой хаба (`npm --prefix server run dev:stub`: заглушка на порту 9100, сервер игр на порту 3000)
+- **Шаги:**
+  1. Отправить спин с токеном `tok-timeout-then-forbidden` и ключом `u1`, получить `busy`.
+  2. Отправить тот же ключ `u1` ещё раз.
+  3. Подождать две минуты, наблюдая список вызовов заглушки, лог сервера игр и строку `rounds`.
+- **Ожидаемый результат:** Оба ответа браузеру — `error: busy` (не `unavailable`). Раунд остаётся `bet_pending`, в нём `bet_sends` больше `bet_busy_answers`, вызовы `bet` повторяются с одним `transactionId` с растущими паузами, с шестой неудачной попытки в логе error-строка `bet_pending_alert`.
+
+### SLOTS-SERVER-TC39 — Две копии сервера не повторяют один вызов
 - **Тип:** БД
-- **Требование:** FR30 — «WHEN the sweeper repeats a leg, THE SYSTEM SHALL claim the round with a lease in a short transaction before the call, make the call outside any transaction, and write the outcome only if the round still has the status it claimed, and a round saved by a spin request SHALL NOT be due before that request's 8 seconds have passed, so that no two callers repeat one leg. (R11)»
+- **Требование:** FR30 — «WHEN the sweeper repeats a leg, THE SYSTEM SHALL claim the round with a lease in a short transaction before the call, make the call outside any transaction, and write the outcome only if the round still has the status it claimed, and a spin request SHALL move the round's due time to the call timeout plus a margin before each call it makes, and a repeated key that finds the round `bet_pending` SHALL take the same lease and, with the lease held, wait for the holder's outcome up to the bet budget, so that no two callers repeat one leg. (R11)»
 - **Приоритет:** P2
 - **Предусловия:** Две копии сервера игр на одной базе (порты 3000 и 3001); токен `tok-win-busy` создаёт раунд, ожидающий выигрыш.
 - **Нужно на стенде:** локальный стенд: Postgres, собранные бандлы игр (`npm --prefix server run build:games`), сервер игр с заглушкой хаба (`npm --prefix server run dev:stub`: заглушка на порту 9100, сервер игр на порту 3000); вторая копия сервера игр на порту 3001 с той же базой
 - **Шаги:**
   1. Сделать выигрышный спин через первую копию с токеном `tok-win-busy`.
   2. Наблюдать минуту список вызовов заглушки, сгруппированный по `transactionId` и времени.
-- **Ожидаемый результат:** Каждая попытка `win` по раунду приходит один раз в своё время (5, 10, 20 секунд…): в одно и то же время двух вызовов с одним `transactionId` нет. Раунд, только что сохранённый спином, sweeper не трогает раньше чем через 8 секунд.
+- **Ожидаемый результат:** Каждая попытка `win` по раунду приходит один раз в своё время (5, 10, 20 секунд…): в одно и то же время двух вызовов с одним `transactionId` нет. Раунд, только что сохранённый спином, sweeper не трогает, пока не пройдёт аренда (по умолчанию 12 секунд после последнего вызова спина).
 
-### SLOTS-SERVER-TC39 — Повтор ключа раунда, ожидающего выигрыш, возвращает исход с пометкой
+### SLOTS-SERVER-TC40 — Повтор ключа раунда, ожидающего выигрыш, возвращает исход с пометкой
 - **Тип:** API
 - **Требование:** FR10 — «WHEN a spin key arrives again with the same token, THE SYSTEM SHALL answer the first answer for that key, a round that still owes its win or is parked answering its outcome marked `creditPending`, and SHALL NOT draw, debit or credit again. (R9)»
 - **Приоритет:** P2
@@ -454,18 +467,29 @@
   3. То же с `tok-pending-win`, повторив ключ сразу после первого ответа.
 - **Ожидаемый результат:** Во всех повторах исход тот же, `creditPending: true`, новых вызовов `bet` и `win` из-за повтора нет.
 
-### SLOTS-SERVER-TC40 — Занятость кошелька хаба переживается внутри запроса
+### SLOTS-SERVER-TC41 — Занятость кошелька хаба переживается внутри запроса
 - **Тип:** API
-- **Требование:** FR12 — «IF the hub gives no definite answer to a bet (`BUSY`, `INTERNAL`, no answer), THEN THE SYSTEM SHALL repeat the same call with the same transaction id until it is answered, within the spin request every 0.2 seconds growing to 1 second while 8 seconds last and afterwards by the sweeper, and SHALL answer the browser `busy` after those 8 seconds so that the browser can repeat the same spin key. (R11)»
+- **Требование:** FR12 — «IF the hub gives no definite answer to a bet (`BUSY`, `INTERNAL`, no answer), THEN THE SYSTEM SHALL repeat the same call with the same transaction id until it is answered, within the spin request every 0.2 seconds growing to 1 second while the bet budget of 10 seconds (`HUB_CALL_TIMEOUT_MS`, longer than the hub's own 8 second wait for a busy wallet) lasts and afterwards by the sweeper, and SHALL answer the browser `busy` after that budget so that the browser can repeat the same spin key. (R11)»
 - **Приоритет:** P1
-- **Предусловия:** Токен `tok-busy-once`: первая ставка отвечает 503 BUSY, следующая принята.
+- **Предусловия:** Токен `tok-busy-once`: первая ставка отвечает 503 BUSY после ожидания 8 секунд (как хаб при занятом кошельке), следующая принята сразу.
 - **Нужно на стенде:** локальный стенд: Postgres, собранные бандлы игр (`npm --prefix server run build:games`), сервер игр с заглушкой хаба (`npm --prefix server run dev:stub`: заглушка на порту 9100, сервер игр на порту 3000)
 - **Шаги:**
   1. Отправить спин с токеном `tok-busy-once`.
   2. Засечь время ответа и открыть список вызовов заглушки.
-- **Ожидаемый результат:** Ответ приходит с исходом (не `busy`) примерно через секунду; в списке два вызова `bet` с одним `transactionId`, списание произошло один раз.
+- **Ожидаемый результат:** Ответ приходит с исходом (не `busy`) примерно через 8-9 секунд; в списке два вызова `bet` с одним `transactionId`, списание произошло один раз.
 
-### SLOTS-SERVER-TC41 — Тревога по зависшей ставке
+### SLOTS-SERVER-TC42 — Повтор ключа не делает второго одновременного вызова ставки
+- **Тип:** API
+- **Требование:** FR30 — «WHEN the sweeper repeats a leg, THE SYSTEM SHALL claim the round with a lease in a short transaction before the call, make the call outside any transaction, and write the outcome only if the round still has the status it claimed, and a spin request SHALL move the round's due time to the call timeout plus a margin before each call it makes, and a repeated key that finds the round `bet_pending` SHALL take the same lease and, with the lease held, wait for the holder's outcome up to the bet budget, so that no two callers repeat one leg. (R11)»
+- **Приоритет:** P2
+- **Предусловия:** Токен `tok-medium`: ставка отвечает через 3 секунды.
+- **Нужно на стенде:** локальный стенд: Postgres, собранные бандлы игр (`npm --prefix server run build:games`), сервер игр с заглушкой хаба (`npm --prefix server run dev:stub`: заглушка на порту 9100, сервер игр на порту 3000)
+- **Шаги:**
+  1. Отправить спин с ключом `d1` и, не дожидаясь ответа, тот же ключ `d1` ещё раз.
+  2. Открыть список вызовов заглушки.
+- **Ожидаемый результат:** Оба ответа содержат один и тот же раунд; вызов `bet` с этим `transactionId` в списке один, второй запрос дождался исхода первого.
+
+### SLOTS-SERVER-TC43 — Тревога по зависшей ставке
 - **Тип:** API
 - **Требование:** FR15 — «WHEN a bet call or a win call has failed more than 5 times for a round, THE SYSTEM SHALL log an error line `bet_pending_alert` or `win_pending_alert` for every further attempt, and `GET /healthz` SHALL report how many rounds wait for a bet or a win, how many are parked and the age of the oldest. (R10)»
 - **Приоритет:** P2
@@ -477,7 +501,7 @@
   3. Открыть лог сервера игр и `http://localhost:3000/healthz`.
 - **Ожидаемый результат:** С шестой неудачной попытки в логе error-строка `bet_pending_alert` на каждую попытку, до пятой её нет. `/healthz` показывает `waitingBet` 1 (числом, не строкой).
 
-### SLOTS-SERVER-TC42 — Пополнение в другом месте снимает отказ без перезапуска игры
+### SLOTS-SERVER-TC44 — Пополнение в другом месте снимает отказ без перезапуска игры
 - **Тип:** UI
 - **Требование:** FR23 — «IF the balance shown is below the bet and the balance the server returns when asked is below the bet too, THEN THE SYSTEM SHALL refuse the spin without moving the reels, show "NOT ENOUGH FUNDS" and a DEPOSIT button, and WHEN the player presses the button THE SYSTEM SHALL post `{type: 'apex:deposit'}` to the parent window. (R6)»
 - **Приоритет:** P2
@@ -489,7 +513,7 @@
   3. Не перезагружая окно, нажать SPIN.
 - **Ожидаемый результат:** Окно спросило баланс у сервера, увидело 50.05 и приняло спин: барабаны вращаются, сообщение NOT ENOUGH FUNDS пропало.
 
-### SLOTS-SERVER-TC43 — Пока спин не завершён, ставка в окне заблокирована и равна сохранённой
+### SLOTS-SERVER-TC45 — Пока спин не завершён, ставка в окне заблокирована и равна сохранённой
 - **Тип:** UI
 - **Требование:** FR26 — «WHEN a spin is sent, THE SYSTEM SHALL keep its key and bet in the tab's session storage until a definite answer arrives, and WHEN the window is reloaded or SPIN is pressed after a lost connection THE SYSTEM SHALL send that same key with that same bet, show that bet and lock the bet controls until a definite answer arrives, and show the round it returns. (R9)»
 - **Приоритет:** P2

@@ -13,7 +13,7 @@ Scope: the player's browser with the game window, the game server (`slots-server
 ## Flow 1 — Opening a game
 
 ```
-Player → site → hub LaunchCasino → address {playUrl}/play/{symbol}?token&lang&lobby
+Player → site → hub LaunchCasino(<identity>, e.g. apexslots_tropic_escape) → address {playUrl}/play/{symbol}?token&lang&lobby   (lang and lobby are ignored by the window)
 Browser → GET /play/{symbol}                 (static page of the game, headers: frame-ancestors, no-referrer)
   └─ game window: read token → sessionStorage
        └─ unfinished spin key in sessionStorage?  yes → Flow 5 (resume)   no → continue
@@ -58,19 +58,20 @@ POST /api/game/spin
             ├─ round → refused, result deleted, never repeated
             └─ ← {ok:false, error: insufficient_funds, balanceCents}
 Game window: NOT ENOUGH FUNDS + DEPOSIT (S6)
-  └─ DEPOSIT pressed → window.parent.postMessage({type:'apex:deposit'}, origin of lobby | '*') → the site opens its deposit page
+  └─ DEPOSIT pressed → window.parent.postMessage({type:'apex:deposit'}, '*') → the site checks event.source and event.origin and opens its deposit page
 ```
 
-Other final refusals of the bet (`LIMIT_EXCEEDED`, `REFUSED`, `CONFLICT`, `BAD_REQUEST`) end the round the same way and answer `bet_refused`. `SESSION_NOT_FOUND` ends it `refused` and answers `session_expired`. A bet answered 401, 403 or 404 (a configuration fault on the hub's side, nothing moved) ends it `refused` and answers `unavailable`; the window clears its key. Before it refuses a spin on its own shown balance, the window asks `GET /api/game/session` for the current balance. A repeated key returns the same refusal; a new SPIN is a new key and a new round id.
+Other final refusals of the bet (`LIMIT_EXCEEDED`, `REFUSED`, `CONFLICT`, `BAD_REQUEST`) end the round the same way and answer `bet_refused`. `SESSION_NOT_FOUND` ends it `refused` and answers `session_expired`. A bet answered 401, 403 or 404 (a configuration fault on the hub's side, nothing moved) ends it `refused` and answers `unavailable`; the window clears its key. The one exception: when an earlier attempt of that bet ended with an unknown outcome (`INTERNAL`, a timeout, a transport error) the bet may already be debited, so the round stays `bet_pending`, the call is repeated with the same transaction id until a definite answer with `bet_pending_alert`, and the browser gets `busy`. Before it refuses a spin on its own shown balance, the window asks `GET /api/game/session` for the current balance. A repeated key returns the same refusal; a new SPIN is a new key and a new round id.
 
 ## Flow 4 — A leg that gets no answer
 
 ```
 POST /api/game/spin
   └─ bet: BUSY | INTERNAL | no answer
-       ├─ the request repeats the call (same transaction id) every 0.2 s growing to 1 s while 8 s last   (the hub answers BUSY to any second call of the same wallet)
+       ├─ the hub queues a second call of the same wallet for up to 8 s and then answers BUSY; our call timeout and bet budget are 10 s, so BUSY arrives as "nothing moved"
+       ├─ a BUSY with budget left is repeated (same transaction id) every 0.2 s growing to 1 s; an attempt is cut to the remaining budget
        ├─ still no definite answer → ← {ok:false, error: busy}   the window keeps the key, shows the stored bet and locks the bet controls (S9), sends the key again on the next SPIN
-       └─ sweeper: claims the round with a lease (not due before the request's 8 s), calls outside any transaction, writes the result only if the status is still the claimed one;
+       └─ sweeper: claims the round with a lease (SWEEP_LEASE_MS, longer than a call; the request moves the due time before each of its calls, and a repeated key takes the same lease and waits for the holder's outcome), calls outside any transaction, writes the result only if the status is still the claimed one;
             repeats /bet (same transaction id) at 5 s doubling to 1 h until answered; after the 5th failure: error log bet_pending_alert per attempt
             └─ accepted → /win if the win is above zero → settled      (the player's repeat of the key returns the round)
   └─ bet accepted, win: BUSY | INTERNAL | no answer | any refusal except CONFLICT, BAD_REQUEST

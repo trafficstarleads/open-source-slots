@@ -16,7 +16,7 @@ All calls carry `Authorization: Bearer <launch token>` and are same-origin (the 
 | Endpoint | Status | What changes |
 |---|---|---|
 | `GET /api/game/session?game={symbol}` | added | `200 {ok: true, balanceCents}` from the hub's `balance`; `401 session_expired` (no token, or the hub's `SESSION_NOT_FOUND`); `503 unavailable` (hub `UNAUTHORIZED`, 403, 404, no answer); `400 bad_request` (unknown game). T003 |
-| `POST /api/game/spin` | added | body `{game, key, betCents, play: {type: 'base'}}`. `200 {ok: true, roundId, round, winCents, costCents, balanceCents, replay?, creditPending?}`: `round` is the engine's round, `costCents` equals `betCents`, `replay` is true for a repeated key, `creditPending` is true while the win is not credited. A repeated key of a round that still owes its win or is parked answers `200` with the outcome and `creditPending: true`. Failures: `400 bad_request` (game or bet off the ladder), `401 session_expired` (no token, or the bet refused `SESSION_NOT_FOUND`: the round ends `refused`), `422 insufficient_funds` (with `balanceCents`), `422 bet_refused` (`LIMIT_EXCEEDED`, `REFUSED`, `CONFLICT`, `BAD_REQUEST`; the round ends `refused`), `503 busy` (no definite answer to the bet within 8 s, `BUSY` repeated inside the budget every 0.2 s growing to 1 s; the round stays `bet_pending`), `503 unavailable` (the bet answered 401, 403 or 404, nothing moved: the round ends `refused`). A key answered `bet_refused`, `insufficient_funds`, `session_expired` or `unavailable` returns the same answer when repeated. T004, T005 |
+| `POST /api/game/spin` | added | body `{game, key, betCents, play: {type: 'base'}}`. `200 {ok: true, roundId, round, winCents, costCents, balanceCents, replay?, creditPending?}`: `round` is the engine's round, `costCents` equals `betCents`, `replay` is true for a repeated key, `creditPending` is true while the win is not credited. A repeated key of a round that still owes its win or is parked answers `200` with the outcome and `creditPending: true`. Failures: `400 bad_request` (game or bet off the ladder), `401 session_expired` (no token, or the bet refused `SESSION_NOT_FOUND`: the round ends `refused`), `422 insufficient_funds` (with `balanceCents`), `422 bet_refused` (`LIMIT_EXCEEDED`, `REFUSED`, `CONFLICT`, `BAD_REQUEST`; the round ends `refused`), `503 busy` (no definite answer to the bet within the 10 s budget, `BUSY` repeated inside the budget every 0.2 s growing to 1 s; the round stays `bet_pending`; also the answer to a repeated key whose lease is held by another caller whose outcome does not arrive within the budget), `503 unavailable` (the bet answered 401, 403 or 404 and every earlier send of it was answered "nothing moved", so nothing moved: the round ends `refused`; after an earlier send that was not answered "nothing moved" the answer is `503 busy` and the round stays `bet_pending`, repeated until a definite answer). A key answered `bet_refused`, `insufficient_funds`, `session_expired` or `unavailable` returns the same answer when repeated. T004, T005 |
 | `POST /api/game/deliver` | not-doing | the win is credited at the spin, so there is nothing to deliver; the clients drop the call and the server answers 404 |
 | `GET /healthz` | added | `{waitingBet, waitingWin, parked, oldestWaitingSeconds}`, all integers (cast in SQL); no token. T005 |
 
@@ -28,7 +28,7 @@ Below the router:
 
 ## Settings (new) — `server/src/config.ts`
 
-`PORT`, `DATABASE_URL`, `HUB_BASE_URL`, `HUB_PARTNER`, `HUB_SECRET_KEY`, `FRAME_ANCESTORS` (required, no default), `PUBLIC_DIR`, `HUB_CALL_TIMEOUT_MS` (8000), `SWEEP_INTERVAL_MS`, `ALERT_AFTER_ATTEMPTS` (5). The upload script reads `CATALOG_GRPC_ADDRESS` and `CATALOG_ADMIN_KEY`. Listed in `server/.env.example` (T012).
+`PORT`, `DATABASE_URL`, `HUB_BASE_URL`, `HUB_PARTNER`, `HUB_SECRET_KEY`, `FRAME_ANCESTORS` (required, no default), `PUBLIC_DIR`, `HUB_CALL_TIMEOUT_MS` (10000: per-call timeout and bet budget of a spin request, longer than the hub's 8 second wait for a busy wallet), `SWEEP_LEASE_MS` (default `HUB_CALL_TIMEOUT_MS` + 2000; the start fails when it is not larger than `HUB_CALL_TIMEOUT_MS`), `SWEEP_INTERVAL_MS`, `ALERT_AFTER_ATTEMPTS` (5). The upload script reads `CATALOG_GRPC_ADDRESS` and `CATALOG_ADMIN_KEY`. Listed in `server/.env.example` (T012).
 
 ## Stub hub — `server/dev/stub-hub.ts` (development and tests)
 
@@ -41,16 +41,17 @@ Started by `npm --prefix server run dev:stub` on port 9100 together with the gam
 | `tok-poor` | balance 0.05; a bet is refused `INSUFFICIENT_FUNDS` |
 | `tok-expired` | every call is refused `SESSION_NOT_FOUND` |
 | `tok-limit` | a bet is refused `LIMIT_EXCEEDED` |
-| `tok-slow` | the bet answers after 12 seconds (longer than the 8 second wait) |
-| `tok-medium` | the bet answers after 3 seconds (inside the 8 second wait) |
-| `tok-busy-once` | the first bet call of a round answers `503 BUSY`, the next is accepted |
+| `tok-slow` | the first bet call of a transaction answers after 12 seconds (longer than the 10 second timeout; the stub books the bet meanwhile); a repeat of a transaction the stub has already booked answers at once with the booked answer, as the hub's idempotency does |
+| `tok-medium` | the bet answers after 3 seconds (inside the 10 second budget) |
+| `tok-busy-once` | the first bet call of a round answers `503 BUSY` after the stub's lock wait (`STUB_LOCK_WAIT_MS`, 8000 by default, the hub's own wait), the next is accepted at once |
 | `tok-forbidden` | every bet call answers `403` with no body |
 | `tok-bet-internal` | every bet call answers `503 INTERNAL` |
+| `tok-timeout-then-forbidden` | the first bet call of a round answers after 15 seconds, past the 10 second timeout (the stub books it as debited); every later bet call answers `403` |
 | `tok-pending-win` | the first two win calls of a round answer `503 BUSY`, the third is accepted |
 | `tok-win-conflict` | a win call is refused `CONFLICT` |
 | `tok-win-busy` | every win call answers `503 BUSY` |
 
-`GET /host/{symbol}?token=…` serves `server/dev/host.html`: a page of another origin that frames `/play/{symbol}` and shows every message the frame posts. `GET /calls` returns the calls the stub received, in order, with their transaction ids. `POST /deposit/{token}?cents=N` adds N cents to a token's wallet, standing in for a deposit made elsewhere. Added by T003 (the `balance` call, the wallets, `tok-rich`, `tok-rich-2`, `tok-expired`, `/calls`, `/deposit`, `/host`), T004 (the `bet` and `win` calls and the bet tokens `tok-poor`, `tok-limit`, `tok-slow`, `tok-medium`, `tok-forbidden`, `tok-bet-internal`) and T005 (`tok-busy-once` and the win tokens); the tokens `tok-pending-win`, `tok-win-conflict` and `tok-win-busy` by T005.
+`GET /host/{symbol}?token=…` serves `server/dev/host.html`: a page of another origin that frames `/play/{symbol}` and shows every message the frame posts. `GET /calls` returns the calls the stub received, in order, with their transaction ids. `POST /deposit/{token}?cents=N` adds N cents to a token's wallet, standing in for a deposit made elsewhere. Added by T003 (the `balance` call, the wallets, `tok-rich`, `tok-rich-2`, `tok-expired`, `/calls`, `/deposit`, `/host`), T004 (the `bet` and `win` calls and the bet tokens `tok-poor`, `tok-limit`, `tok-slow`, `tok-medium`, `tok-forbidden`, `tok-bet-internal`, `tok-timeout-then-forbidden`) and T005 (`tok-busy-once` and the win tokens); the tokens `tok-pending-win`, `tok-win-conflict` and `tok-win-busy` by T005.
 
 ## Hub calls this half makes outside the contract
 

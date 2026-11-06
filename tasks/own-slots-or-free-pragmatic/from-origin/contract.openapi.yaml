@@ -155,7 +155,14 @@ components:
             balanceCents: 14900
             currency: USD
     Unauthorized:
-      description: The signature is missing or wrong. Nothing moved.
+      description: >
+        The signature is missing or wrong. Nothing moved. A configuration fault: for a `bet` the
+        game server ends the round unplayed, tells the player the game is unavailable and does
+        not repeat the call, so that a bet the player never saw played is not debited later; for
+        a `win` it repeats the call with growing pauses until the hub answers. The one exception
+        for a `bet` is a bet whose earlier attempt ended with an unknown outcome (`INTERNAL`, a
+        timeout or a transport error): it may already be debited, so the game server repeats it
+        with the same transaction id until the hub gives a definite answer, with an alert raised.
       content:
         application/json:
           schema:
@@ -167,11 +174,19 @@ components:
     Forbidden:
       description: >
         The caller's address is not in the partner's allow-list. No body. Nothing moved. This is a
-        configuration fault, so the call is retried later and not abandoned.
+        configuration fault. For a `bet` the game server ends the round unplayed, tells the player
+        the game is unavailable and does not repeat the call, so that a bet the player never saw
+        played is not debited later. For a `win` the call is retried later and not abandoned. The
+        one exception for a `bet` is a bet whose earlier attempt ended with an unknown outcome
+        (`INTERNAL`, a timeout or a transport error): it may already be debited, so the game
+        server repeats it with the same transaction id until the hub gives a definite answer,
+        with an alert raised.
     NotFound:
       description: >
         The partner row is unknown or disabled, or its adapter is not compiled in. A plain-text
-        body. Nothing moved. The call is retried later and not abandoned.
+        body. Nothing moved. The same rule as `Forbidden`: a `bet` ends its round unplayed and is
+        not repeated, except after an earlier attempt with an unknown outcome; a `win` is retried
+        later and not abandoned.
     Refused:
       description: >
         A definite no. Nothing moved. For a `bet`, `INSUFFICIENT_FUNDS`, `LIMIT_EXCEEDED` and
@@ -205,6 +220,36 @@ components:
             code: BUSY
             message: wallet is busy
   schemas:
+    GameSymbol:
+      type: string
+      description: >
+        The vendor slug of one of the twelve games: what the launch URL, the game server's
+        registry and its pages use. It is not the name the hub's gRPC API uses; that is
+        `x-catalog.games[].identity`, and the tile upload and the casino site go by it.
+      enum:
+        - tropic-escape
+        - stellar-sevens
+        - bumper-crop
+        - golden-papyrus
+        - nitro-hot
+        - scorching-hot
+        - pearl-reef
+        - discovery-voyage
+        - house-of-ra
+        - fairytale
+        - samurai
+        - the-dynasty
+    DepositMessage:
+      type: object
+      description: >
+        The message of `x-game-window-messages.deposit`. Extra fields are allowed: the sender sends
+        none today, a later additive field must not break a receiver, and the receiver ignores
+        any field it does not know.
+      required: [type]
+      properties:
+        type:
+          type: string
+          const: 'apex:deposit'
     BalanceRequest:
       type: object
       additionalProperties: false
@@ -314,8 +359,90 @@ x-launch-url:
     server serves it. Query values are URL-encoded.
   template: '{playUrl}/play/{symbol}?token={token}&lang={locale}&lobby={lobbyUrl}'
   parameters:
-    playUrl: https origin of the game server taken from the partner's config, without a trailing slash
-    symbol: the game's slug, one of the twelve in the catalog
-    token: the hub session token, 32 lower-case hexadecimal characters
-    locale: the player's language tag
-    lobbyUrl: the site's lobby address; may be empty
+    playUrl:
+      description: https origin of the game server taken from the partner's config, without a trailing slash
+    symbol:
+      description: the game's slug, one of the twelve in the catalog
+      schema:
+        $ref: '#/components/schemas/GameSymbol'
+    token:
+      description: the hub session token, 32 lower-case hexadecimal characters
+    locale:
+      description: >
+        the player's language tag; the game windows are English only and ignore it
+    lobbyUrl:
+      description: >
+        the site's lobby address; may be empty. The game window does not use it as the target
+        origin of its messages (see `x-game-window-messages`).
+x-game-window-messages:
+  description: >
+    Not an HTTP path: the messages the game window, a frame served by the game server, posts to the
+    casino site that embeds it, with `window.postMessage`. The game server sends them, the casino
+    site receives them. The old message `apex:low-balance` is not sent.
+  deposit:
+    when: the player presses the DEPOSIT button of the "not enough funds" message, and only then
+    sender: the game window, to `window.parent`
+    targetOrigin: >
+      `*`. The message carries no data, and the receiver checks who sent it. An explicit origin
+      derived from `lobby` is not used: the platform sends `lobby` as its first configured site
+      address exactly as written, with a path or a `www.` host possible, and redirects `www.*` to
+      the bare host, so a browser would drop the message with no error and DEPOSIT would do
+      nothing.
+    receiver: >
+      the casino site accepts the message only when `event.source` is the window of the game's
+      frame and `event.origin` is the origin of the launch address that `launch` returned, and
+      ignores any other message, any other `type` and any extra field.
+    schema:
+      $ref: '#/components/schemas/DepositMessage'
+    example:
+      type: 'apex:deposit'
+x-catalog:
+  description: >
+    Not an HTTP path of the webhook: what the hub's catalogue lists for this vendor (gRPC
+    `ListCasino` after `sync`; the catalogue is constant, the hub fetches nothing from the game
+    server). The casino site picks the twelve games by `provider.name` and hides the demo switch
+    by `demo_enable`.
+  provider:
+    name: APEXSLOTS
+    identity: apexslots
+    description: >
+      `name` is exactly the `provider_name` the platform matches, ignoring case. `identity` is what
+      the hub derives from it and returns as `provider` in `ListCasino`.
+  games:
+    description: >
+      Each game has two names. `symbol` is the vendor's slug: it is in the launch URL, the game
+      server's registry and the game server's pages, and nowhere in the hub's gRPC API. `identity`
+      is what the hub derives at sync from the provider identity and `name`
+      (`Identity::of("apexslots_" + name)`: lower case, anything but letters, digits and spaces
+      dropped, spaces to `_`). `ListCasino`, `LaunchCasino`, `UpdateImage` and the casino site
+      use `identity`, and `UpdateImage` answers `NOT_FOUND` for a symbol.
+    type: array
+    minItems: 12
+    maxItems: 12
+    uniqueItems: true
+    items:
+      type: object
+      required: [symbol, name, identity, demo_enable]
+      properties:
+        symbol:
+          $ref: '#/components/schemas/GameSymbol'
+        name:
+          type: string
+        identity:
+          type: string
+          pattern: '^apexslots_[a-z0-9_]+$'
+        demo_enable:
+          const: false
+    const:
+      - {symbol: tropic-escape, name: Tropic Escape, identity: apexslots_tropic_escape, demo_enable: false}
+      - {symbol: stellar-sevens, name: Stellar Sevens, identity: apexslots_stellar_sevens, demo_enable: false}
+      - {symbol: bumper-crop, name: Bumper Crop, identity: apexslots_bumper_crop, demo_enable: false}
+      - {symbol: golden-papyrus, name: Golden Papyrus, identity: apexslots_golden_papyrus, demo_enable: false}
+      - {symbol: nitro-hot, name: Nitro Hot, identity: apexslots_nitro_hot, demo_enable: false}
+      - {symbol: scorching-hot, name: Scorching Hot, identity: apexslots_scorching_hot, demo_enable: false}
+      - {symbol: pearl-reef, name: Pearl Reef, identity: apexslots_pearl_reef, demo_enable: false}
+      - {symbol: discovery-voyage, name: Discovery Voyage, identity: apexslots_discovery_voyage, demo_enable: false}
+      - {symbol: house-of-ra, name: House of Ra, identity: apexslots_house_of_ra, demo_enable: false}
+      - {symbol: fairytale, name: Fairytale, identity: apexslots_fairytale, demo_enable: false}
+      - {symbol: samurai, name: Samurai, identity: apexslots_samurai, demo_enable: false}
+      - {symbol: the-dynasty, name: The Dynasty, identity: apexslots_the_dynasty, demo_enable: false}
