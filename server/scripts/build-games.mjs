@@ -1,10 +1,13 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
-const OUTPUT_ROOT = fileURLToPath(new URL('../public/play/', import.meta.url));
+const OUTPUT_DIR_SETTING = 'GAMES_OUTPUT_DIR';
+const OUTPUT_ROOT = process.env[OUTPUT_DIR_SETTING]
+  ? resolve(process.env[OUTPUT_DIR_SETTING])
+  : fileURLToPath(new URL('../public/play/', import.meta.url));
 const ARGUMENT_SEPARATOR = '--';
 const ENGINE_ENTRY = join('src', 'engine', 'index.ts');
 const VITE_CONFIG = 'vite.config.ts';
