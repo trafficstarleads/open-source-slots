@@ -7,6 +7,7 @@ import { createHubClient } from './hub/client';
 import { registerBrowserErrorHandler } from './http/browserError';
 import { registerHealthRoute } from './http/health';
 import { registerLaunchToken } from './http/launchToken';
+import { appLoggerOptions } from './http/requestLog';
 import { registerSessionRoute } from './http/session';
 import { registerSpinRoute } from './http/spin';
 import { registerStaticPages } from './http/static';
@@ -23,7 +24,7 @@ declare module 'fastify' {
 const GAME_API_PREFIX = '/api/game';
 
 export function buildApp(config: AppConfig, clock: Clock = systemClock): FastifyInstance {
-  const app = Fastify({ logger: { level: config.logLevel } });
+  const app = Fastify({ logger: appLoggerOptions(config.logLevel) });
   const hub = createHubClient(config.hub, app.log);
   const db = createPool(config.databaseUrl, app.log);
   const rng = createSecureRng();

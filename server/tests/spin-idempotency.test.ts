@@ -17,6 +17,7 @@ const AFTER_FIRST_SWEEP_PAUSE_MS = 5_000;
 const INTERNAL: ScriptedAnswer = { status: 503, body: '{"status":"retry","code":"INTERNAL","message":"failed"}' };
 const ACCEPTED: ScriptedAnswer = { status: 200, body: '{"status":"ok","balanceCents":9990,"currency":"USD"}' };
 const SETTLED_BALANCE_CENTS = 777;
+const ABOVE_INT32_CENTS = 3_000_000_000;
 
 interface RoundRow {
   readonly id: string;
@@ -80,6 +81,18 @@ describe('a spin key that arrives again', () => {
       "select data_type from information_schema.columns where table_name = 'rounds' and column_name = 'win_cents' and table_schema = current_schema()",
     );
     expect(column.rows).toEqual([{ data_type: 'integer' }]);
+  });
+
+  it('books a hub balance above the 32-bit range and answers it as a JSON number', async () => {
+    await fetch(`${stack.stub.url}/deposit/tok-rich-2?cents=${ABOVE_INT32_CENTS}`, { method: 'POST' });
+
+    const answer = await postSpin(stack.app, 'tok-rich-2');
+
+    expect(answer.statusCode).toBe(200);
+    expect(answer.raw).toMatch(/"balanceCents":\d+[,}]/);
+    expect(answer.body.balanceCents).toBeGreaterThan(ABOVE_INT32_CENTS);
+    const [row] = (await rounds(stack)).filter((round) => round.balance_cents !== null && round.balance_cents > ABOVE_INT32_CENTS);
+    expect(row.balance_cents).toBe(answer.body.balanceCents);
   });
 
   it.each([

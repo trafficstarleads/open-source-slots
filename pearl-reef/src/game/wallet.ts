@@ -3,6 +3,7 @@ import { createWallet } from '../../../client-kit/src';
 
 export {
   CREDIT_PENDING_LABEL,
+  creditedShare,
   DEPOSIT_LABEL,
   fromCents,
   postDeposit,

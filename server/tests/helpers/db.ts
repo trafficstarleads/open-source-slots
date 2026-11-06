@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { Pool } from 'pg';
 import { applyMigrations } from '../../src/db/migrate';
+import { CENTS_AS_NUMBERS } from '../../src/db/pool';
 
 export interface TestDatabase {
   readonly url: string;
@@ -30,7 +31,7 @@ export async function createTestDatabase(migrated = true): Promise<TestDatabase>
   if (migrated) {
     await applyMigrations(url);
   }
-  const pool = new Pool({ connectionString: url });
+  const pool = new Pool({ connectionString: url, types: CENTS_AS_NUMBERS });
   return {
     url,
     pool,

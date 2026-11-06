@@ -9,7 +9,7 @@ You can read every line of it, check the numbers yourself, and use it as the sta
 ## The games
 
 | | Game | Layout | RTP | Original site | Source |
-|---|---|---|---|---|
+|---|---|---|---|---|---|
 | <img src="tiles/tropic-escape.webp" width="96" alt="TROPIC ESCAPE"> | **TROPIC ESCAPE**<br>A beach slot. The banana is wild, doubles the wins it completes and is the top symbol. Suitcases pay anywhere and three start 45 free games on their own reels, which carry more bananas and more suitcases, and three more there add 45 again. | 5x3, 9 lines | 95.36% | [Play](https://apexslots.eu/games/tropic-escape/) | [Code](tropic-escape/) |
 | <img src="tiles/stellar-sevens.webp" width="96" alt="STELLAR SEVENS"> | **STELLAR SEVENS**<br>A classic fruit slot on three reels. No wild, no scatter, no free games, only three of a kind pays. Sevens are the top symbol and a full screen of them fills all five lines for the top win. | 3x3, 5 lines | 95.50% | [Play](https://apexslots.eu/games/stellar-sevens/) | [Code](stellar-sevens/) |
 | <img src="tiles/bumper-crop.webp" width="96" alt="BUMPER CROP"> | **BUMPER CROP**<br>A farm slot with avalanches. Winning symbols are harvested, the rest fall and fresh ones drop in, for as long as the field pays. Three tractors pay and open a five-floor barn ladder of prizes and multipliers. | 5x3, 25 lines | 95.55% | [Play](https://apexslots.eu/games/bumper-crop/) | [Code](bumper-crop/) |
@@ -90,11 +90,12 @@ The stub keeps one wallet per token:
 |---|---|
 | `tok-rich`, `tok-rich-2` | balance 100.00, every call is accepted |
 | `tok-poor` | balance 0.05, a bet is refused for insufficient funds |
-| `tok-expired` | every call is refused as an unknown session |
 | `tok-limit` | a bet is refused as over the limit |
-| `tok-slow`, `tok-medium` | the bet is answered after 12 and 3 seconds |
-| `tok-busy-once`, `tok-bet-internal`, `tok-forbidden` | the bet is answered busy once, always with an internal error, always with 403 |
-| `tok-pending-win`, `tok-win-busy`, `tok-win-conflict` | the win is accepted on the third call, never accepted (busy), refused as a conflict |
+| `tok-bet-internal` | a bet is always answered with an internal error |
+| `tok-busy-once` | the first bet is answered busy after 8 seconds, the next one is accepted |
+| `tok-timeout-then-forbidden` | the first bet hangs for 15 seconds, past the server's call timeout; the next one is refused with 403 |
+| `tok-win-busy` | the bet is accepted, the win is always answered busy |
+| any other token, such as `tok-expired` | every call is refused as an unknown session |
 
 `GET /calls` on the stub lists the calls it received; `POST /deposit/<token>?cents=N` adds N cents to a wallet, as a deposit made elsewhere would.
 
@@ -113,7 +114,7 @@ The server reads its settings from the environment; `server/.env.example` lists 
 | `HUB_PARTNER` | `ownslots` | partner name in the hub's path `/webhook/<partner>/…` |
 | `PORT` | `3000` | listening port |
 | `PUBLIC_DIR` | `public` | folder that holds `play/<symbol>/`, relative to the working directory |
-| `LOG_LEVEL` | `info` | log level; logs are one JSON object per line |
+| `LOG_LEVEL` | `info` | log level; logs are one JSON object per line, and a logged request url carries its path only, so the launch token in the address never reaches the log |
 | `HUB_CALL_TIMEOUT_MS` | `10000` | timeout of one hub call, and the time a spin waits for its bet to be answered; longer than the hub's own 8 second wait for a busy wallet |
 | `SWEEP_LEASE_MS` | `HUB_CALL_TIMEOUT_MS` + 2000 | how long the sweeper holds a round while it repeats a call; must exceed `HUB_CALL_TIMEOUT_MS` |
 | `SWEEP_INTERVAL_MS` | `1000` | pause between sweeper passes |

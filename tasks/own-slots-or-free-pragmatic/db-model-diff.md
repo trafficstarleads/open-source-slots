@@ -28,6 +28,12 @@ Added by migration `002_round_retry.sql` (T005):
 | `next_attempt_at` | `timestamptz` null | added | when the sweeper may repeat the leg; null when nothing is owed. A spin request inserts a `bet_pending` round with `now() + SWEEP_LEASE_MS` and pushes it forward again in the write that precedes each of its hub calls (each bet attempt and the win), so the sweeper never races the live request; a repeated key that finds the round `bet_pending` takes the same lease; the sweeper claims a due round by pushing this forward by a lease in a short transaction (`FOR UPDATE SKIP LOCKED`), calls the hub outside any transaction, then writes the outcome `WHERE status = <claimed status>` (R10, R11) |
 | `last_error` | `text` null | added | the last code the hub or the network gave, for the operator |
 
+`balance_cents`, added by `001_rounds.sql` as `integer` null, becomes `bigint` null in migration `003_balance_bigint.sql` (review r1 #7):
+
+| Field | Type | Status | Comment |
+|---|---|---|---|
+| `balance_cents` | `bigint` null | changed | the balance the hub answered to the bet or the win. The contract sets no maximum on `balanceCents`, so an `integer` column overflowed above 2^31 - 1 cents after the hub had already moved the money. The hub client accepts only safe integers (up to 2^53 - 1) and `createPool` reads `int8` as a JS number through `CENTS_AS_NUMBERS`, so the value stays a JSON number. `win_cents` stays `integer`: the server draws it, capped by the ladder |
+
 Index `rounds_due_idx` on `(next_attempt_at)` where `status in ('bet_pending', 'win_pending')`: the sweeper reads due rounds with `FOR UPDATE SKIP LOCKED` inside its short claiming transaction. The `/healthz` aggregates are cast to `int` in SQL (`count(*)` and `extract(epoch …)` come back from `pg` as strings).
 
 No expiry job exists: rounds are kept for good (R17).

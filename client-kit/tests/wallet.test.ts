@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   browserEnvironment,
   createWallet,
+  creditedShare,
   FAILURE_MESSAGES,
   fromCents,
   roundView,
@@ -523,6 +524,30 @@ describe('money', () => {
   it('turns cents into an amount for the meters', () => {
     expect(fromCents(10_000)).toBe(100);
     expect(fromCents(5)).toBe(0.05);
+  });
+});
+
+describe('shares of the credited win', () => {
+  const CREDITED_CENTS = 1_001;
+  const WHOLE_UNITS = 7;
+
+  it('splits the credited win into a base and a bonus that add up to it', () => {
+    const baseCents = creditedShare(CREDITED_CENTS, 3, WHOLE_UNITS);
+    const bonusCents = CREDITED_CENTS - baseCents;
+
+    expect(baseCents).toBe(429);
+    expect(baseCents + bonusCents).toBe(CREDITED_CENTS);
+  });
+
+  it('rounds each running tally to the cent and ends the last one on the credited win', () => {
+    const tallies = [1, 2, 4, WHOLE_UNITS].map((units) => creditedShare(CREDITED_CENTS, units, WHOLE_UNITS));
+
+    expect(tallies).toEqual([143, 286, 572, CREDITED_CENTS]);
+    expect(tallies.every((cents) => Number.isInteger(cents))).toBe(true);
+  });
+
+  it('shows nothing for a part of a round that won no units', () => {
+    expect(creditedShare(CREDITED_CENTS, 0, 0)).toBe(0);
   });
 });
 

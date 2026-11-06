@@ -79,6 +79,10 @@ export function fromCents(cents: number): number {
   return cents / CENTS_PER_UNIT;
 }
 
+export function creditedShare(creditedCents: number, partUnits: number, wholeUnits: number): number {
+  return wholeUnits > 0 ? Math.round((creditedCents * partUnits) / wholeUnits) : 0;
+}
+
 export function roundView(round: ServerRound<unknown>): RoundView {
   return {
     winAmount: fromCents(round.winCents),

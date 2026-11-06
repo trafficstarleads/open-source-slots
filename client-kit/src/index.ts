@@ -1,6 +1,7 @@
 export {
   browserEnvironment,
   createWallet,
+  creditedShare,
   fromCents,
   roundView,
   toCents,

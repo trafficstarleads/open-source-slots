@@ -7,6 +7,7 @@ import { Board, BOARD_H, BOARD_W, loadSymbolTextures } from './board';
 import { Hud } from './hud';
 import { initFit } from './fit';
 import {
+  creditedShare,
   fromCents,
   postDeposit,
   roundView,
@@ -31,10 +32,6 @@ const LATER_FALL_COUNT_MS = 420;
 function loaderProgress(pct: number): void {
   const fill = document.querySelector<HTMLElement>('.loader-fill');
   if (fill) fill.style.width = `${pct}%`;
-}
-
-function creditedShare(creditedCents: number, partUnits: number, wholeUnits: number): number {
-  return wholeUnits > 0 ? Math.round((creditedCents * partUnits) / wholeUnits) : 0;
 }
 
 async function boot(): Promise<void> {
@@ -176,7 +173,8 @@ async function boot(): Promise<void> {
     hud.setBalance(fromCents(view.balanceAfterBetCents));
     try {
       await presentRound(outcome.round, view, bet);
-    } catch {
+    } catch (error) {
+      console.warn('The round could not be presented.', error);
       hud.message('Something went wrong. Reload to re-sync.');
     }
     hud.setBalance(fromCents(view.finalBalanceCents));
