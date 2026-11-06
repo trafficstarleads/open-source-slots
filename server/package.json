@@ -11,6 +11,8 @@
     "codegen": "openapi-typescript ../tasks/own-slots-or-free-pragmatic/from-origin/contract.openapi.yaml -o src/hub/generated.ts",
     "codegen:check": "openapi-typescript ../tasks/own-slots-or-free-pragmatic/from-origin/contract.openapi.yaml -o src/hub/generated.ts --check",
     "build": "node build.mjs",
+    "build:games": "node scripts/build-games.mjs",
+    "dev:stub": "tsx dev/stub-hub.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -19,8 +21,13 @@
     "@vitest/coverage-v8": "5.1.0",
     "esbuild": "0.28.2",
     "openapi-typescript": "7.13.0",
+    "tsx": "4.23.15",
     "typescript": "5.9.3",
     "vitest": "5.1.0",
     "yaml": "2.9.1"
+  },
+  "dependencies": {
+    "@fastify/static": "10.1.10",
+    "fastify": "5.12.8"
   }
 }

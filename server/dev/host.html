@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="game-origin" content="__GAME_ORIGIN__" />
+    <title>Host page of a game window</title>
+    <style>
+      body { margin: 0; font-family: sans-serif; background: #1b1b1f; color: #eee; }
+      #game { display: block; width: 100%; height: 70vh; border: 0; background: #000; }
+      #log { margin: 0; padding: 8px 12px; height: 25vh; overflow: auto; font: 12px/1.4 monospace; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <div id="frame-slot"></div>
+    <pre id="log">messages posted by the frame appear here
+</pre>
+    <script>
+      const gameOrigin = document.querySelector('meta[name="game-origin"]').content;
+      const symbol = location.pathname.split('/').filter(Boolean).pop();
+      const params = new URLSearchParams(location.search);
+      const frameParams = new URLSearchParams({
+        token: params.get('token') ?? '',
+        lang: params.get('lang') ?? 'en',
+        lobby: params.has('lobby') ? params.get('lobby') : location.href,
+      });
+
+      const frame = document.createElement('iframe');
+      frame.id = 'game';
+      frame.src = `${gameOrigin}/play/${encodeURIComponent(symbol)}?${frameParams}`;
+      document.getElementById('frame-slot').appendChild(frame);
+
+      window.addEventListener('message', (event) => {
+        const fromFrame = event.source === frame.contentWindow && event.origin === gameOrigin;
+        const line = `${new Date().toISOString()} origin=${event.origin} fromFrame=${fromFrame} ${JSON.stringify(event.data)}\n`;
+        document.getElementById('log').append(line);
+      });
+    </script>
+  </body>
+</html>
