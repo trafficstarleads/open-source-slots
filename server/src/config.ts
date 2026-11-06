@@ -7,7 +7,13 @@ const DEFAULT_PUBLIC_DIR = 'public';
 const DEFAULT_LOG_LEVEL = 'info';
 const DEFAULT_HUB_CALL_TIMEOUT_MS = 10_000;
 const MAX_HUB_CALL_TIMEOUT_MS = 600_000;
-const REQUIRED_SETTINGS = ['FRAME_ANCESTORS', 'HUB_SECRET_KEY', 'HUB_BASE_URL', 'DATABASE_URL'] as const;
+const SWEEP_LEASE_MARGIN_MS = 2_000;
+const MAX_SWEEP_LEASE_MS = 3_600_000;
+const DEFAULT_SWEEP_INTERVAL_MS = 1_000;
+const MAX_SWEEP_INTERVAL_MS = 3_600_000;
+const DEFAULT_ALERT_AFTER_ATTEMPTS = 5;
+const MAX_ALERT_AFTER_ATTEMPTS = 1_000;
+const REQUIRED_SETTINGS =['FRAME_ANCESTORS', 'HUB_SECRET_KEY', 'HUB_BASE_URL', 'DATABASE_URL'] as const;
 const HUB_URL_PROTOCOLS: readonly string[] = ['http:', 'https:'];
 const TRAILING_SLASHES = /\/+$/;
 const WHOLE_NUMBER = /^\d+$/;
@@ -23,6 +29,12 @@ export interface HubSettings {
   readonly callTimeoutMs: number;
 }
 
+export interface SweepSettings {
+  readonly leaseMs: number;
+  readonly intervalMs: number;
+  readonly alertAfterAttempts: number;
+}
+
 export interface AppConfig {
   readonly port: number;
   readonly publicDir: string;
@@ -30,6 +42,7 @@ export interface AppConfig {
   readonly databaseUrl: string;
   readonly logLevel: string;
   readonly hub: HubSettings;
+  readonly sweep: SweepSettings;
 }
 
 function read(env: NodeJS.ProcessEnv, name: string): string | undefined {
@@ -82,14 +95,40 @@ function loadHubSettings(env: NodeJS.ProcessEnv, required: Readonly<Record<Requi
   });
 }
 
+function loadSweepSettings(env: NodeJS.ProcessEnv, hub: HubSettings): SweepSettings {
+  const leaseMs = readWholeNumber(
+    env,
+    'SWEEP_LEASE_MS',
+    hub.callTimeoutMs + SWEEP_LEASE_MARGIN_MS,
+    1,
+    MAX_SWEEP_LEASE_MS,
+  );
+  if (leaseMs <= hub.callTimeoutMs) {
+    throw new ConfigError('SWEEP_LEASE_MS must be larger than HUB_CALL_TIMEOUT_MS');
+  }
+  return Object.freeze({
+    leaseMs,
+    intervalMs: readWholeNumber(env, 'SWEEP_INTERVAL_MS', DEFAULT_SWEEP_INTERVAL_MS, 1, MAX_SWEEP_INTERVAL_MS),
+    alertAfterAttempts: readWholeNumber(
+      env,
+      'ALERT_AFTER_ATTEMPTS',
+      DEFAULT_ALERT_AFTER_ATTEMPTS,
+      0,
+      MAX_ALERT_AFTER_ATTEMPTS,
+    ),
+  });
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
   const required = readRequired(env);
+  const hub = loadHubSettings(env, required);
   return Object.freeze({
     port: readWholeNumber(env, 'PORT', DEFAULT_PORT, 0, MAX_PORT),
     publicDir: resolve(read(env, 'PUBLIC_DIR') ?? DEFAULT_PUBLIC_DIR),
     frameAncestors: required.FRAME_ANCESTORS,
     databaseUrl: required.DATABASE_URL,
     logLevel: read(env, 'LOG_LEVEL') ?? DEFAULT_LOG_LEVEL,
-    hub: loadHubSettings(env, required),
+    hub,
+    sweep: loadSweepSettings(env, hub),
   });
 }

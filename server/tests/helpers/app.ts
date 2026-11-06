@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/app';
 import { loadConfig, type AppConfig } from '../../src/config';
-import { startStubHub, type StubHub } from '../../dev/stub-hub';
+import type { Clock } from '../../src/clock';
+import { startStubHub, type StubHub, type StubHubOptions } from '../../dev/stub-hub';
 import { createTestDatabase, standDatabaseUrl, type TestDatabase } from './db';
 
 export const TEST_PARTNER = 'ownslots-test';
@@ -20,6 +21,11 @@ export interface Stack {
   readonly config: AppConfig;
   readonly database: TestDatabase;
   readonly close: () => Promise<void>;
+}
+
+export interface StackRuntime {
+  readonly clock?: Clock;
+  readonly stub?: Pick<Partial<StubHubOptions>, 'busyWaitMs' | 'hangMs'>;
 }
 
 export interface ScriptedHub {
@@ -105,16 +111,20 @@ export function testEnv(hubBaseUrl: string, overrides: NodeJS.ProcessEnv = {}): 
   };
 }
 
-export async function startStack(envOverrides: NodeJS.ProcessEnv = {}): Promise<Stack> {
+export async function startStack(
+  envOverrides: NodeJS.ProcessEnv = {},
+  runtime: StackRuntime = {},
+): Promise<Stack> {
   const stub = await startStubHub({
     partner: TEST_PARTNER,
     secretKey: TEST_HMAC_KEY,
     port: 0,
     gameOrigin: TEST_GAME_ORIGIN,
+    ...runtime.stub,
   });
   const database = await createTestDatabase();
   const config = loadConfig(testEnv(stub.url, { DATABASE_URL: database.url, ...envOverrides }));
-  const app = buildApp(config);
+  const app = buildApp(config, runtime.clock);
   await app.ready();
   return {
     app,

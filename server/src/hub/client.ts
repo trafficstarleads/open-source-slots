@@ -25,8 +25,8 @@ export interface HubLogger {
 
 export interface HubClient {
   readonly balance: (token: string) => Promise<HubAnswer>;
-  readonly bet: (call: MoneyCall) => Promise<HubAnswer>;
-  readonly win: (call: MoneyCall) => Promise<HubAnswer>;
+  readonly bet: (call: MoneyCall, timeoutMs?: number) => Promise<HubAnswer>;
+  readonly win: (call: MoneyCall, timeoutMs?: number) => Promise<HubAnswer>;
 }
 
 const STATUS_OK = 200;
@@ -85,14 +85,14 @@ function readAnswer(status: number, text: string): HubAnswer {
 export function createHubClient(settings: HubSettings, logger: HubLogger): HubClient {
   const webhookBase = `${settings.baseUrl}/webhook/${encodeURIComponent(settings.partner)}`;
 
-  async function call(leg: HubLeg, request: HubRequest): Promise<HubAnswer> {
+  async function call(leg: HubLeg, request: HubRequest, timeoutMs: number): Promise<HubAnswer> {
     const rawBody = JSON.stringify(request);
     try {
       const response = await fetch(`${webhookBase}/${leg}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', [SIGNATURE_HEADER]: signBody(settings.secretKey, rawBody) },
         body: rawBody,
-        signal: AbortSignal.timeout(settings.callTimeoutMs),
+        signal: AbortSignal.timeout(timeoutMs),
       });
       const answer = readAnswer(response.status, await response.text());
       if (answer.kind === 'no_answer') {
@@ -105,13 +105,17 @@ export function createHubClient(settings: HubSettings, logger: HubLogger): HubCl
     }
   }
 
-  function money(leg: 'bet' | 'win', { token, roundId, amountCents, roundClose }: MoneyCall): Promise<HubAnswer> {
-    return call(leg, { token, transactionId: `${roundId}:${leg}`, roundId, amountCents, roundClose });
+  function money(
+    leg: 'bet' | 'win',
+    { token, roundId, amountCents, roundClose }: MoneyCall,
+    timeoutMs: number,
+  ): Promise<HubAnswer> {
+    return call(leg, { token, transactionId: `${roundId}:${leg}`, roundId, amountCents, roundClose }, timeoutMs);
   }
 
   return {
-    balance: (token) => call('balance', { token }),
-    bet: (moneyCall) => money('bet', moneyCall),
-    win: (moneyCall) => money('win', moneyCall),
+    balance: (token) => call('balance', { token }, settings.callTimeoutMs),
+    bet: (moneyCall, timeoutMs = settings.callTimeoutMs) => money('bet', moneyCall, timeoutMs),
+    win: (moneyCall, timeoutMs = settings.callTimeoutMs) => money('win', moneyCall, timeoutMs),
   };
 }

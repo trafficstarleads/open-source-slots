@@ -11,9 +11,12 @@ import {
   type ScriptedAnswer,
   type Stack,
 } from './helpers/app';
+import { ManualClock } from './helpers/clock';
 
 const SHORT_CALL_TIMEOUT_MS = '200';
 const LONG_CALL_TIMEOUT_MS = '3000';
+const SINGLE_ATTEMPT_BUDGET_MS = '150';
+const AFTER_FIRST_SWEEP_PAUSE_MS = 5_000;
 const BUSY: ScriptedAnswer = { status: 503, body: '{"status":"retry","code":"BUSY","message":"wallet is busy"}' };
 const INTERNAL: ScriptedAnswer = { status: 503, body: '{"status":"retry","code":"INTERNAL","message":"failed"}' };
 const FORBIDDEN: ScriptedAnswer = { status: 403, body: '' };
@@ -261,8 +264,15 @@ describe('a bet that gets no definite answer', () => {
     await Promise.all(closers.splice(0).map((close) => close()));
   });
 
-  async function against(hubUrl: string | undefined, env: NodeJS.ProcessEnv = {}): Promise<Stack> {
-    const stack = await startStack(hubUrl === undefined ? env : { HUB_BASE_URL: hubUrl, ...env });
+  async function against(
+    hubUrl: string | undefined,
+    env: NodeJS.ProcessEnv = {},
+    clock?: ManualClock,
+  ): Promise<Stack> {
+    const stack = await startStack(
+      { HUB_CALL_TIMEOUT_MS: SINGLE_ATTEMPT_BUDGET_MS, ...(hubUrl === undefined ? {} : { HUB_BASE_URL: hubUrl }), ...env },
+      { clock },
+    );
     closers.push(stack.close);
     return stack;
   }
@@ -332,10 +342,12 @@ describe('a bet that gets no definite answer', () => {
 
   it('keeps the round open when a later 403 follows a send that may have debited, and sends the same bet again', async () => {
     const hub = await scripted(INTERNAL, FORBIDDEN);
-    const stack = await against(hub.url);
+    const clock = new ManualClock();
+    const stack = await against(hub.url, {}, clock);
     const payload = spinPayload();
 
     const first = await postSpin(stack.app, 'tok-rich', payload);
+    clock.advance(AFTER_FIRST_SWEEP_PAUSE_MS);
     const second = await postSpin(stack.app, 'tok-rich', payload);
 
     expect(first.body).toEqual({ ok: false, error: 'busy' });
@@ -347,10 +359,12 @@ describe('a bet that gets no definite answer', () => {
 
   it('ends the round when a later 403 follows only sends answered BUSY', async () => {
     const hub = await scripted(BUSY, FORBIDDEN);
-    const stack = await against(hub.url);
+    const clock = new ManualClock();
+    const stack = await against(hub.url, {}, clock);
     const payload = spinPayload();
 
     await postSpin(stack.app, 'tok-rich', payload);
+    clock.advance(AFTER_FIRST_SWEEP_PAUSE_MS);
     const second = await postSpin(stack.app, 'tok-rich', payload);
 
     expect(second.body).toEqual({ ok: false, error: 'unavailable' });

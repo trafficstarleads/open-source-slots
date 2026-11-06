@@ -10,7 +10,10 @@ import {
   type ScriptedAnswer,
   type Stack,
 } from './helpers/app';
+import { ManualClock } from './helpers/clock';
 
+const SINGLE_ATTEMPT_BUDGET_MS = '150';
+const AFTER_FIRST_SWEEP_PAUSE_MS = 5_000;
 const INTERNAL: ScriptedAnswer = { status: 503, body: '{"status":"retry","code":"INTERNAL","message":"failed"}' };
 const ACCEPTED: ScriptedAnswer = { status: 200, body: '{"status":"ok","balanceCents":9990,"currency":"USD"}' };
 const SETTLED_BALANCE_CENTS = 777;
@@ -178,12 +181,14 @@ describe('a key whose bet is still pending', () => {
   it('sends the same bet again with the same transaction id and answers the round already drawn', async () => {
     const hub = await startSequencedHub([INTERNAL, ACCEPTED]);
     closers.push(hub.close);
-    const stack = await startStack({ HUB_BASE_URL: hub.url });
+    const clock = new ManualClock();
+    const stack = await startStack({ HUB_BASE_URL: hub.url, HUB_CALL_TIMEOUT_MS: SINGLE_ATTEMPT_BUDGET_MS }, { clock });
     closers.push(stack.close);
     const payload = spinPayload();
 
     const first = await postSpin(stack.app, 'tok-rich', payload);
     const [drawn] = await rounds(stack);
+    clock.advance(AFTER_FIRST_SWEEP_PAUSE_MS);
     const again = await postSpin(stack.app, 'tok-rich', payload);
 
     expect(first.body).toEqual({ ok: false, error: 'busy' });

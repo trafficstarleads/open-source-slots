@@ -146,6 +146,7 @@ describe('the settings', () => {
       databaseUrl: DATABASE_URL,
       logLevel: 'info',
       hub: { baseUrl: HUB_URL, partner: 'ownslots', secretKey: 'k', callTimeoutMs: 10_000 },
+      sweep: { leaseMs: 12_000, intervalMs: 1_000, alertAfterAttempts: 5 },
     });
   });
 

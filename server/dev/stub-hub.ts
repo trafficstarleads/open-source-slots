@@ -16,6 +16,8 @@ export interface StubHubOptions {
   readonly secretKey: string;
   readonly port: number;
   readonly gameOrigin: string;
+  readonly busyWaitMs?: number;
+  readonly hangMs?: number;
 }
 
 type MoneyLeg = 'bet' | 'win';
@@ -30,6 +32,11 @@ export interface RecordedCall {
 interface StubAnswer {
   readonly status: number;
   readonly body: Schemas['Refused'] | Schemas['Retry'];
+}
+
+interface ScriptedStep {
+  readonly delayMs: number;
+  readonly answer: StubAnswer;
 }
 
 export interface StubHub {
@@ -61,6 +68,11 @@ const CURRENCY = 'USD';
 const MAX_TOKEN_LENGTH = 128;
 const MAX_ROUND_ID_LENGTH = 64;
 const MAX_AMOUNT_CENTS = 1_000_000_000;
+const HUB_LOCK_WAIT_MS = 8_000;
+const HANG_PAST_CALL_TIMEOUT_MS = 15_000;
+const BUSY_ONCE_TOKEN = 'tok-busy-once';
+const TIMEOUT_THEN_FORBIDDEN_TOKEN = 'tok-timeout-then-forbidden';
+const STATUS_FORBIDDEN = 403;
 const MONEY_REQUEST_KEYS = ['amountCents', 'roundClose', 'roundId', 'token', 'transactionId'].join();
 const MONEY_LEGS: readonly MoneyLeg[] = ['bet', 'win'];
 const WHOLE_POSITIVE_NUMBER = /^[1-9]\d*$/;
@@ -73,6 +85,8 @@ const INITIAL_BALANCES_CENTS: ReadonlyArray<readonly [string, number]> = [
   ['tok-limit', 10_000],
   ['tok-bet-internal', 10_000],
   ['tok-win-busy', 10_000],
+  [BUSY_ONCE_TOKEN, 10_000],
+  [TIMEOUT_THEN_FORBIDDEN_TOKEN, 10_000],
 ];
 
 function refusal(code: Schemas['Refused']['code'], message: string): Schemas['Refused'] {
@@ -90,6 +104,30 @@ const SCRIPTED_MONEY_ANSWERS: Readonly<Record<MoneyLeg, ReadonlyMap<string, Stub
   ]),
   win: new Map([['tok-win-busy', { status: 503, body: retry('BUSY', 'wallet is busy') }]]),
 };
+
+function sequencedBetStep(token: string, callNumber: number, options: StubHubOptions): ScriptedStep | undefined {
+  if (token === BUSY_ONCE_TOKEN && callNumber === 1) {
+    return {
+      delayMs: options.busyWaitMs ?? HUB_LOCK_WAIT_MS,
+      answer: { status: 503, body: retry('BUSY', 'wallet is busy') },
+    };
+  }
+  if (token === TIMEOUT_THEN_FORBIDDEN_TOKEN) {
+    return callNumber === 1
+      ? {
+          delayMs: options.hangMs ?? HANG_PAST_CALL_TIMEOUT_MS,
+          answer: { status: 503, body: retry('INTERNAL', 'the bet failed') },
+        }
+      : { delayMs: 0, answer: { status: STATUS_FORBIDDEN, body: refusal('UNAUTHORIZED', 'forbidden') } };
+  }
+  return undefined;
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((done) => {
+    setTimeout(done, ms).unref();
+  });
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -145,6 +183,7 @@ function buildStubHub(options: StubHubOptions): { app: FastifyInstance; calls: R
   const calls: RecordedCall[] = [];
   const balancesCents = new Map<string, number>(INITIAL_BALANCES_CENTS);
   const bookedAnswers = new Map<string, Schemas['Accepted']>();
+  const betCallsByToken = new Map<string, number>();
 
   app.removeContentTypeParser('application/json');
   app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (request, rawBody: Buffer, done) => {
@@ -195,6 +234,15 @@ function buildStubHub(options: StubHubOptions): { app: FastifyInstance; calls: R
       const scripted = SCRIPTED_MONEY_ANSWERS[leg].get(money.token);
       if (scripted !== undefined) {
         return reply.code(scripted.status).send(scripted.body);
+      }
+      if (leg === 'bet') {
+        const callNumber = (betCallsByToken.get(money.token) ?? 0) + 1;
+        betCallsByToken.set(money.token, callNumber);
+        const step = sequencedBetStep(money.token, callNumber, options);
+        if (step !== undefined) {
+          await wait(step.delayMs);
+          return reply.code(step.answer.status).send(step.answer.body);
+        }
       }
       const booked = bookedAnswers.get(money.transactionId);
       if (booked !== undefined) {
