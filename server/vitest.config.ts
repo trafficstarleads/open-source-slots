@@ -10,7 +10,7 @@ export default defineConfig({
       TEST_DATABASE_URL: process.env.TEST_DATABASE_URL ?? STAND_DATABASE_URL,
     },
     coverage: {
-      include: ['src/**/*.ts', 'dev/**/*.ts'],
+      include: ['src/**/*.ts', 'dev/**/*.ts', 'scripts/**/*.ts'],
     },
   },
 });
