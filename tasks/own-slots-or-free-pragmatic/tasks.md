@@ -6,9 +6,34 @@
 - Id: `d2f3116de475e94b90045b41e9f5c3a0a91b2b94` — `git hash-object`
 - Check: `npm --prefix server run codegen:check`
 
+## Commands
+
+Derived at preflight. The repo has no CI workflow, no formatter and no linter; `server/` does not exist
+before T001, so its scripts come from `plan.md` §Critical files and are checked against T001's
+`package.json` when it lands. Tests that need Postgres read `TEST_DATABASE_URL`; the stand is the
+container `slots-test-pg` (`docker run -d --name slots-test-pg -e POSTGRES_PASSWORD=test -p 5434:5432 postgres:17`),
+`TEST_DATABASE_URL=postgres://postgres:test@localhost:5434/postgres`.
+
+### C:\Users\GamePC\Desktop\projects\alexpay\own-slots-or-free-pragmatic\slots-server
+
+- Item tests (run from `server/`): `timeout 1800 npx vitest run --reporter=dot <test paths>`
+- Full suite (source: `plan.md` §Seams S1/S2/S4 and §Critical files `server/package.json` `test`; no CI workflow exists): `timeout 1800 npm --prefix server test --silent`
+- Typecheck (gate check 2; no formatter or linter is configured): `npm --prefix server exec -- tsc -p server/tsconfig.json --noEmit`
+- Coverage (Cobertura XML to `server/coverage/cobertura-coverage.xml`; needs `@vitest/coverage-v8` in `server/package.json`): `timeout 1800 npx vitest run --reporter=dot --coverage --coverage.provider=v8 --coverage.reporter=cobertura <test paths>`
+- Contract check: `npm --prefix server run codegen:check`
+- Migration check, parity harness, import-boundary lint: none in this repo.
+
+## Baseline failures
+
+### C:\Users\GamePC\Desktop\projects\alexpay\own-slots-or-free-pragmatic\slots-server
+
+none for `server/`: the package does not exist at HEAD, so there is no suite to fail. The twelve games'
+own `npm test` suites are not touched by T001-T006; the batch that reaches T007 runs their baseline
+before its first item.
+
 ## Items
 
-- [ ] **T001** Stand up the hub wire in this repo: server package, types generated from the contract, fixtures, `CLAUDE.md`
+- [x] **T001** Stand up the hub wire in this repo: server package, types generated from the contract, fixtures, `CLAUDE.md`
   - `_Depends: —_` · `_Boundary: server, CLAUDE.md, .gitignore_`
   - **Files:** `CLAUDE.md`,
     `.gitignore`,
@@ -533,5 +558,10 @@
 | `server/tests/e2e.test.ts` | T012 |
 
 ## Implementation Notes
+- T001: `server/` scripts are `codegen`, `codegen:check`, `typecheck`, `test` (later items add the rest); exact pins `openapi-typescript` 7.13.0, `typescript` 5.9.3, `vitest` and `@vitest/coverage-v8` 5.1.0, `yaml` 2.9.1, `@types/node` 22.20.5, `engines` `>=22.12.0 <23`; `tsconfig` is `moduleResolution: bundler` with `noUncheckedIndexedAccess` and `include` of `src`, `tests`, `vitest.config.ts` (an item importing `../<game>/src/engine` adds those paths to `include`); `vitest.config.ts` runs files serially, `env.TEST_DATABASE_URL` defaults to the stand URL, coverage `include` is `src/**/*.ts`; `codegen` reads `../tasks/own-slots-or-free-pragmatic/from-origin/contract.openapi.yaml`; fixture shapes: `balance_ok.json` `{request, response}`, `bet_ok.json` `{requests: {spinWithWin, spinWithoutWin}, response}`, `bet_refused.json` `{request, refused, unauthorized}`, `bet_retry.json` `{request, response}`, `win_ok.json` `{request, response}`, `deposit_message.json` the bare message; `server/.gitattributes` pins `generated.ts` to LF; `Widened<T>` in `hub-contract.test.ts` types JSON fixtures. Symbols added: `interface paths`, `type webhooks`, `interface components`, `type $defs`, `interface operations` in `server/src/hub/generated.ts`.
 
 ## Concerns
+- T001: three files beyond the item's `**Files:**` — `server/tests/fixtures/bet_retry.json`, `server/tests/fixtures/deposit_message.json`, `server/.gitattributes` — are needed for "every example equals a fixture" and a stable `codegen:check` on Windows. → dismissed: all inside the `server` boundary, no other item reads them
+- T001: `generated.ts` is types-only, so changed-line coverage of it is vacuous. → dismissed: the coverage script exits 0 and no code is added to fake it
+- T001: the secrets grep matches the contract example's launch token `3f9c0e5a...` in fixtures and `generated.ts`, and the throwaway test-container password sits in `vitest.config.ts` and `CLAUDE.md`. → dismissed: sample values from the contract and a local test container
+- T001: `codegen` and `hub-contract.test.ts` read the contract from `tasks/own-slots-or-free-pragmatic/` of this repo. → dismissed: the contract lives with the task workspace while the task runs
