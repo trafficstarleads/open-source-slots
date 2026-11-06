@@ -2,8 +2,7 @@
  * The control bar and money meters, plain DOM under the Pixi frame: balance,
  * bet stepper, win meter, the SPIN button and the message line, plus the
  * BIG WIN plaque and the whole free games ceremony (intro with the chosen
- * symbol, the spins-left counter, retrigger flashes, the closing tally), and
- * the DEPOSIT button that goes with a refusal for funds.
+ * symbol, the spins-left counter, retrigger flashes, the closing tally).
  */
 import type { PaySymbol } from '../engine';
 import { sound } from './audio';

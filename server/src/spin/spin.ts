@@ -7,6 +7,7 @@ import {
   deferRound,
   findRound,
   findRoundById,
+  owesWin,
   parkWin,
   recordBetFailure,
   recordBetSend,
@@ -148,12 +149,12 @@ export function createSpinService({ db, hub, deal, logger, clock, retry }: SpinD
       return { kind: 'closed', round: sent };
     }
     const answer = await hub.bet(
-      { token: sent.token, roundId: sent.id, amountCents: sent.betCents, roundClose: sent.winCents === 0 },
+      { token: sent.token, roundId: sent.id, amountCents: sent.betCents, roundClose: !owesWin(sent) },
       timeoutMs,
     );
     switch (answer.kind) {
       case 'accepted':
-        return { kind: 'accepted', round: await acceptBet(db, sent.id, answer.balanceCents, leaseEnd()) };
+        return { kind: 'accepted', round: await acceptBet(db, sent, answer.balanceCents, leaseEnd()) };
       case 'refused':
         return { kind: 'closed', round: await refuse(sent, answer.code) };
       case 'rejected': {

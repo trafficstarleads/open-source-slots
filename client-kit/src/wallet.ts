@@ -67,6 +67,12 @@ export interface RoundView {
   readonly creditPending: boolean;
 }
 
+export interface FailureDisplay {
+  message(text: string): void;
+  offerDeposit(text: string): void;
+  setBalance(amount: number): void;
+}
+
 type ServerAnswer<Body> =
   | { readonly ok: true; readonly body: Body }
   | { readonly ok: false; readonly error: ServerErrorCode; readonly balanceCents: number | undefined };
@@ -90,6 +96,17 @@ export function roundView(round: ServerRound<unknown>): RoundView {
     finalBalanceCents: round.balanceCents,
     creditPending: round.creditPending,
   };
+}
+
+export function showFailure(display: FailureDisplay, failure: Failure): void {
+  if (failure.offersDeposit) {
+    display.offerDeposit(failure.message);
+  } else {
+    display.message(failure.message);
+  }
+  if (failure.balanceCents !== undefined) {
+    display.setBalance(fromCents(failure.balanceCents));
+  }
 }
 
 export function browserEnvironment(owner: Window = window): WalletEnvironment {

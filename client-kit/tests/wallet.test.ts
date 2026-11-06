@@ -6,7 +6,9 @@ import {
   FAILURE_MESSAGES,
   fromCents,
   roundView,
+  showFailure,
   toCents,
+  type FailureDisplay,
   type ServerRound,
   type Wallet,
   type WalletEnvironment,
@@ -548,6 +550,41 @@ describe('shares of the credited win', () => {
 
   it('shows nothing for a part of a round that won no units', () => {
     expect(creditedShare(CREDITED_CENTS, 0, 0)).toBe(0);
+  });
+});
+
+describe('showing a failure', () => {
+  function recordingDisplay(): { readonly display: FailureDisplay; readonly shown: string[] } {
+    const shown: string[] = [];
+    return {
+      shown,
+      display: {
+        message: (text) => shown.push(`message:${text}`),
+        offerDeposit: (text) => shown.push(`deposit:${text}`),
+        setBalance: (amount) => shown.push(`balance:${amount}`),
+      },
+    };
+  }
+
+  it('offers the deposit with the message and shows the balance the server sent', () => {
+    const { display, shown } = recordingDisplay();
+
+    showFailure(display, {
+      code: 'insufficient_funds',
+      message: FAILURE_MESSAGES.insufficient_funds,
+      balanceCents: 5,
+      offersDeposit: true,
+    });
+
+    expect(shown).toEqual([`deposit:${FAILURE_MESSAGES.insufficient_funds}`, 'balance:0.05']);
+  });
+
+  it('shows only the message when the failure offers no deposit and carries no balance', () => {
+    const { display, shown } = recordingDisplay();
+
+    showFailure(display, { code: 'busy', message: FAILURE_MESSAGES.busy, balanceCents: undefined, offersDeposit: false });
+
+    expect(shown).toEqual([`message:${FAILURE_MESSAGES.busy}`]);
   });
 });
 

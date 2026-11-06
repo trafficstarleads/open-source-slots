@@ -3,7 +3,7 @@
  * bet stepper, win meter, the SPIN button and the message line, plus the
  * BIG WIN plaque and the whole free games ceremony (the opening plaque, the
  * spins-left counter with its SKIP button, retrigger flashes, the closing
- * tally), and the DEPOSIT button that goes with a refusal for funds.
+ * tally).
  */
 import { FREE_SPINS_AWARD } from '../engine';
 import { sound } from './audio';

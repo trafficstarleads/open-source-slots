@@ -3,8 +3,7 @@
  * bet stepper, win meter, the SPIN button and the message line, plus the
  * BIG WIN plaque and the whole free games ceremony: the herald's plaque on
  * which the number of free games is drawn, the counter with its SKIP button,
- * a fresh draw for every retrigger, the closing tally, and the DEPOSIT button
- * that goes with a refusal for funds.
+ * a fresh draw for every retrigger, the closing tally.
  *
  * main.ts tells the HUD counts only. The heir who called comes from court.ts
  * (the board reads it off the base grid). The draw is the first count

@@ -8,7 +8,6 @@ import { MIGRATED_GAMES } from './migratedGames';
 const REPO_ROOT = resolve(import.meta.dirname, '..', '..');
 const ART_CREDIT = 'Art by APEXSLOTS (apexslots.eu), CC BY 4.0';
 const KIT_IMPORT = "'../../../client-kit/src'";
-const TOP_BET_CENTS = 1_000;
 const BET_LIST = /const BETS(?::[^=]+)? = \[([^\]]*)\]/;
 
 function gameFile(game: string, relativePath: string): string {
@@ -69,14 +68,10 @@ describe.each(MIGRATED_GAMES)('game window %s', (game) => {
     expect(main).not.toMatch(/totalWin\s*\*/);
   });
 
-  it('offers the bets of the server ladder up to 10.00 and not 15', () => {
-    const bets = betsOf(gameFile(game, 'src/game/hud.ts'));
-    const cents = bets.map(toCents);
+  it('offers exactly the bets of the server ladder', () => {
+    const cents = betsOf(gameFile(game, 'src/game/hud.ts')).map(toCents);
 
-    expect(bets).toContain(10);
-    expect(bets).not.toContain(15);
-    expect(Math.max(...cents)).toBe(TOP_BET_CENTS);
-    cents.forEach((bet) => expect(BET_LADDER_CENTS).toContain(bet));
+    expect(cents).toEqual(BET_LADDER_CENTS);
   });
 
   it('shows the art credit once on the information screen', () => {

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import type { components } from '../src/hub/generated';
+import { isRecord } from '../src/record';
 import balanceOk from './fixtures/balance_ok.json';
 import betOk from './fixtures/bet_ok.json';
 import betRefused from './fixtures/bet_refused.json';
@@ -78,10 +79,6 @@ const fixtureBindings: readonly FixtureBinding[] = [
   { path: ['components', 'responses', 'Retry', ...JSON_BODY, 'example'], fixtures: [typedFixtures.retryAnswer] },
   { path: ['x-game-window-messages', 'deposit', 'example'], fixtures: [typedFixtures.depositMessage] },
 ];
-
-function isRecord(node: unknown): node is Record<string, unknown> {
-  return typeof node === 'object' && node !== null && !Array.isArray(node);
-}
 
 function valueAt(document: unknown, path: readonly string[]): unknown {
   return path.reduce<unknown>((node, key) => {

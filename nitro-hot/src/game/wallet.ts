@@ -7,6 +7,7 @@ export {
   fromCents,
   postDeposit,
   roundView,
+  showFailure,
   toCents,
   type Failure,
 } from '../../../client-kit/src';

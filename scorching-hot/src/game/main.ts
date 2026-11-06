@@ -6,7 +6,7 @@ import type { Grid } from '../engine';
 import { Board, BOARD_H, BOARD_W, loadSymbolTextures } from './board';
 import { Hud } from './hud';
 import { initFit } from './fit';
-import { fromCents, postDeposit, roundView, toCents, wallet, type Failure } from './wallet';
+import { fromCents, postDeposit, roundView, showFailure, toCents, wallet } from './wallet';
 
 const IDLE_GRID: Grid = [
   ['CHERRY', 'LEMON', 'PLUM'],
@@ -65,21 +65,10 @@ async function boot(): Promise<void> {
   if (session.kind === 'ready') {
     hud.setBalance(fromCents(session.balanceCents));
   } else {
-    showFailure(session.failure);
+    showFailure(hud, session.failure);
   }
 
   board.land(IDLE_GRID);
-
-  function showFailure(failure: Failure): void {
-    if (failure.offersDeposit) {
-      hud.offerDeposit(failure.message);
-    } else {
-      hud.message(failure.message);
-    }
-    if (failure.balanceCents !== undefined) {
-      hud.setBalance(fromCents(failure.balanceCents));
-    }
-  }
 
   function finish(): void {
     hud.lockBet(wallet.pendingBetCents());
@@ -99,7 +88,7 @@ async function boot(): Promise<void> {
 
     const clearance = await wallet.clearToSpin(toCents(hud.balance), betCents);
     if (clearance.kind === 'refused') {
-      showFailure(clearance.failure);
+      showFailure(hud, clearance.failure);
       finish();
       return;
     }
@@ -110,7 +99,7 @@ async function boot(): Promise<void> {
     board.prime();
     const outcome = await wallet.spin(betCents);
     if (outcome.kind === 'failed') {
-      showFailure(outcome.failure);
+      showFailure(hud, outcome.failure);
       await board.abort();
       finish();
       return;

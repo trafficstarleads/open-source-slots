@@ -8,6 +8,7 @@ export {
   fromCents,
   postDeposit,
   roundView,
+  showFailure,
   toCents,
   type Failure,
   type RoundView,

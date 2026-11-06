@@ -1,7 +1,7 @@
 /**
  * The control bar and money meters, plain DOM under the Pixi frame: balance,
  * bet stepper, win meter, the SPIN button and the message line, plus the
- * BIG WIN plaque and the DEPOSIT button that goes with a refusal for funds.
+ * BIG WIN plaque.
  */
 import { sound } from './audio';
 import { countUp } from './tween';

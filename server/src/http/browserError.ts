@@ -1,12 +1,15 @@
 import type { FastifyError, FastifyInstance, FastifyReply } from 'fastify';
 
-export type BrowserErrorCode =
-  | 'session_expired'
-  | 'insufficient_funds'
-  | 'bet_refused'
-  | 'bad_request'
-  | 'busy'
-  | 'unavailable';
+export const BROWSER_ERROR_CODES = [
+  'session_expired',
+  'insufficient_funds',
+  'bet_refused',
+  'bad_request',
+  'busy',
+  'unavailable',
+] as const;
+
+export type BrowserErrorCode = (typeof BROWSER_ERROR_CODES)[number];
 
 const STATUS_OF: Readonly<Record<BrowserErrorCode, number>> = {
   session_expired: 401,

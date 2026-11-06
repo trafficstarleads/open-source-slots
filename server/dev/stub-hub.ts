@@ -8,6 +8,7 @@ import { isGameSymbol } from '../src/games/registry';
 import type { components } from '../src/hub/generated';
 import { SIGNATURE_HEADER, signatureMatches } from '../src/hub/sign';
 import { start } from '../src/main';
+import { isRecord } from '../src/record';
 
 type Schemas = components['schemas'];
 
@@ -127,10 +128,6 @@ function wait(ms: number): Promise<void> {
   return new Promise((done) => {
     setTimeout(done, ms).unref();
   });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isToken(value: unknown): value is string {

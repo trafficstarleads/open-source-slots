@@ -160,16 +160,30 @@ export async function deferRound(
   return updatedOrCurrent(db, id, update);
 }
 
-export async function acceptBet(db: Database, id: string, balanceCents: number, leaseUntil: Date): Promise<RoundRow> {
+export function owesWin(round: Pick<RoundRow, 'winCents'>): boolean {
+  return round.winCents > 0;
+}
+
+export async function acceptBet(
+  db: Database,
+  round: RoundRow,
+  balanceCents: number,
+  leaseUntil: Date,
+): Promise<RoundRow> {
+  const winOwed = owesWin(round);
   const update = await db.query<RoundRow>(
     `UPDATE rounds
-     SET status = CASE WHEN win_cents > 0 THEN $3 ELSE $4 END,
-         next_attempt_at = CASE WHEN win_cents > 0 THEN $6::timestamptz ELSE NULL END,
-         balance_cents = $5, attempts = 0, last_error = NULL, updated_at = now()
+     SET status = $3, next_attempt_at = $4, balance_cents = $5, attempts = 0, last_error = NULL, updated_at = now()
      WHERE id = $1 AND status = $2 RETURNING ${COLUMNS}`,
-    [id, ROUND_STATUS.betPending, ROUND_STATUS.winPending, ROUND_STATUS.settled, balanceCents, leaseUntil],
+    [
+      round.id,
+      ROUND_STATUS.betPending,
+      winOwed ? ROUND_STATUS.winPending : ROUND_STATUS.settled,
+      winOwed ? leaseUntil : null,
+      balanceCents,
+    ],
   );
-  return updatedOrCurrent(db, id, update);
+  return updatedOrCurrent(db, round.id, update);
 }
 
 export async function settleWin(db: Database, id: string, balanceCents: number): Promise<RoundRow> {

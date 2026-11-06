@@ -1,4 +1,5 @@
 import type { HubSettings } from '../config';
+import { isRecord } from '../record';
 import type { components } from './generated';
 import { SIGNATURE_HEADER, signBody } from './sign';
 
@@ -45,10 +46,6 @@ const REFUSAL_CODES: Readonly<Record<RefusalCode, true>> = {
   REFUSED: true,
 };
 const RETRY_CODES: Readonly<Record<RetryCode, true>> = { BUSY: true, INTERNAL: true };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function isWholeCents(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;

@@ -1,14 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { isOnLadder } from '../games/ladder';
 import { isGameSymbol } from '../games/registry';
+import { isRecord } from '../record';
 import type { SpinCommand, SpinService } from '../spin/spin';
 import { sendError } from './browserError';
 
 const MAX_SPIN_KEY_LENGTH = 128;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function parseSpinCommand(body: unknown, token: string): SpinCommand | null {
   if (!isRecord(body)) {
