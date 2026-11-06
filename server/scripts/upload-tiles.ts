@@ -10,12 +10,12 @@ import {
 const EXIT_OK = 0;
 const EXIT_FAILED = 1;
 const PLAINTEXT_FLAG = 'true';
-const REQUIRED_SETTINGS = ['HUB_GRPC_ADDRESS', 'CATALOG_ADMIN_KEY'] as const;
+const REQUIRED_SETTINGS = ['CATALOG_GRPC_ADDRESS', 'CATALOG_ADMIN_KEY'] as const;
 
 export class UploadSettingsError extends UploadTilesError {}
 
 export function loadUploadSettings(env: NodeJS.ProcessEnv): UploadTilesConfig {
-  const { HUB_GRPC_ADDRESS: hubAddress, CATALOG_ADMIN_KEY: adminKey } = env;
+  const { CATALOG_GRPC_ADDRESS: hubAddress, CATALOG_ADMIN_KEY: adminKey } = env;
   if (!hubAddress || !adminKey) {
     const missing = REQUIRED_SETTINGS.filter((name) => !env[name]);
     throw new UploadSettingsError(`missing settings: ${missing.join(', ')}`);

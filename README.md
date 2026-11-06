@@ -136,11 +136,11 @@ A round whose bet or win the hub did not answer definitely is not lost.
 
 `tiles/<symbol>.webp` holds the lobby tile of each game. The upload script sends the twelve tiles to the hub's `GameService.UpdateImage` under each game's hub identity (for example `apexslots_tropic_escape`), image key `1x1`. Run it once after the hub's catalogue sync:
 
-    HUB_GRPC_ADDRESS=hub.example.com:9090 CATALOG_ADMIN_KEY=… npm --prefix server run upload-tiles
+    CATALOG_GRPC_ADDRESS=hub.example.com:9090 CATALOG_ADMIN_KEY=… npm --prefix server run upload-tiles
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `HUB_GRPC_ADDRESS` | required | the hub's gRPC address, `host:port` |
+| `CATALOG_GRPC_ADDRESS` | required | the hub's gRPC address, `host:port` |
 | `CATALOG_ADMIN_KEY` | required | catalogue admin key, sent as the metadata `x-catalog-admin-key` |
 | `HUB_GRPC_INSECURE` | unset | `true` for a plaintext connection (a local hub); anything else uses TLS |
 | `TILES_DIR` | `tiles/` at the repository root | folder with the twelve `<symbol>.webp` files |

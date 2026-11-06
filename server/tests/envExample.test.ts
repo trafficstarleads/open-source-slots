@@ -13,7 +13,7 @@ const SERVER_REQUIRED_VALUES: Readonly<Record<string, string>> = {
   DATABASE_URL: 'postgres://app@db.example.com:5432/slots',
 };
 const UPLOAD_REQUIRED_VALUES: Readonly<Record<string, string>> = {
-  HUB_GRPC_ADDRESS: 'hub.example.com:9090',
+  CATALOG_GRPC_ADDRESS: 'hub.example.com:9090',
   CATALOG_ADMIN_KEY: 's3cret',
 };
 

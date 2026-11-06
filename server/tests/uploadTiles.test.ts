@@ -58,7 +58,7 @@ function configFor(overrides: Partial<UploadTilesConfig> = {}): UploadTilesConfi
 
 function environmentFor(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   return {
-    HUB_GRPC_ADDRESS: hub.address,
+    CATALOG_GRPC_ADDRESS: hub.address,
     HUB_GRPC_INSECURE: 'true',
     CATALOG_ADMIN_KEY: CATALOG_KEY,
     ...overrides,
@@ -248,8 +248,22 @@ describe('runUploadTiles', () => {
     const exitCode = await runUploadTiles({}, (line) => lines.push(line));
 
     expect(exitCode).not.toBe(0);
-    expect(lines[0]).toContain('HUB_GRPC_ADDRESS');
+    expect(lines[0]).toContain('CATALOG_GRPC_ADDRESS');
     expect(lines[0]).toContain('CATALOG_ADMIN_KEY');
+    expect(hub.calls).toHaveLength(0);
+  });
+
+  it('treats HUB_GRPC_ADDRESS alone as a missing CATALOG_GRPC_ADDRESS', async () => {
+    const lines: string[] = [];
+
+    const exitCode = await runUploadTiles(
+      environmentFor({ CATALOG_GRPC_ADDRESS: undefined, HUB_GRPC_ADDRESS: hub.address }),
+      (line) => lines.push(line),
+    );
+
+    expect(exitCode).not.toBe(0);
+    expect(lines[0]).toContain('CATALOG_GRPC_ADDRESS');
+    expect(lines[0]).not.toContain('CATALOG_ADMIN_KEY');
     expect(hub.calls).toHaveLength(0);
   });
 
