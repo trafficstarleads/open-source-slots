@@ -246,6 +246,28 @@ body {
   height: 19px;
 }
 
+.credit-pending {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--coral);
+}
+
+#deposit-btn {
+  position: absolute;
+  right: 14px;
+  bottom: 2px;
+  padding: 2px 12px;
+  border: 2px solid var(--gold);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+}
+
 #hud-message {
   position: absolute;
   left: 0;
@@ -771,6 +793,14 @@ body {
   text-align: center;
   font-size: 11px;
   letter-spacing: 0.14em;
+  color: #7f9fd6;
+}
+
+.gi-credit {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.06em;
   color: #7f9fd6;
 }
 

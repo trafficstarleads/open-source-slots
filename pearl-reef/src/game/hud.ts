@@ -3,40 +3,38 @@
  * bet stepper, win meter, the SPIN button and the message line, plus the
  * BIG WIN plaque and the whole free games ceremony (the opening plaque, the
  * spins-left counter with its SKIP button, retrigger flashes, the closing
- * tally). Meters say DEMO in the demo and nothing but the truth behind the
- * login.
+ * tally), and the DEPOSIT button that goes with a refusal for funds.
  */
 import { FREE_GAME_MULT, FREE_SPINS_AWARD } from '../engine';
 import { sound } from './audio';
 import { countUp } from './tween';
 import { GameInfo } from './gameinfo';
 import { symbolArt } from './assets';
-import { REAL } from './wallet';
+import { CREDIT_PENDING_LABEL, DEPOSIT_LABEL, toCents } from './wallet';
 
-const DEMO = REAL ? '' : 'DEMO ';
-
-const ALL_BETS = [
-  0.1, 0.2, 0.4, 0.6, 0.8, 1, 1.2, 1.4, 1.6, 1.8, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30, 35,
-  40, 45, 50, 75, 100,
+const BETS = [
+  0.1, 0.2, 0.4, 0.6, 0.8, 1, 1.2, 1.4, 1.6, 1.8, 2, 3, 4, 5, 6, 7, 8, 9, 10,
 ];
-/** Real play caps the stake at €5 (the server refuses more); the demo keeps the full ladder. */
-const BETS = REAL ? ALL_BETS.filter((b) => b <= 5) : ALL_BETS;
 
 export interface HudCallbacks {
   /** manual spin, and the quick-stop while the reels roll */
   onSpin: () => void;
+  onDeposit: () => void;
 }
 
 export class Hud {
   private betIndex = BETS.indexOf(1);
   private busy = false;
+  private betLocked = false;
   private balanceValue = 0;
   private skipFree = false;
 
   private readonly balanceEl: HTMLElement;
   private readonly winEl: HTMLElement;
+  private readonly creditPendingEl: HTMLElement;
   private readonly betEl: HTMLElement;
   private readonly messageEl: HTMLElement;
+  private readonly depositBtn: HTMLButtonElement;
   private readonly spinBtn: HTMLButtonElement;
   private readonly betUp: HTMLButtonElement;
   private readonly betDown: HTMLButtonElement;
@@ -51,7 +49,7 @@ export class Hud {
       <div id="hud-bar">
         <button id="info-btn" type="button" aria-label="Game info">i</button>
         <button id="sound-btn" type="button" aria-label="Toggle sound"></button>
-        <div class="meter"><span class="meter-label">${DEMO}BALANCE</span><span id="m-balance">0.00</span></div>
+        <div class="meter"><span class="meter-label">BALANCE</span><span id="m-balance">0.00</span></div>
         <div class="bet-stepper">
           <button id="bet-down" type="button" aria-label="Lower bet">-</button>
           <div class="meter"><span class="meter-label">TOTAL BET</span><span id="m-bet"></span></div>
@@ -63,8 +61,9 @@ export class Hud {
             <path d="M 33 3 L 33 12 L 42 12" stroke-linejoin="round"/>
           </svg>
         </button>
-        <div class="meter"><span class="meter-label">WIN</span><span id="m-win">0.00</span></div>
+        <div class="meter"><span class="meter-label">WIN</span><span id="m-win">0.00</span><span class="credit-pending" hidden>${CREDIT_PENDING_LABEL}</span></div>
         <div id="hud-message"></div>
+        <button id="deposit-btn" type="button" hidden>${DEPOSIT_LABEL}</button>
         <div id="fs-panel" hidden>
           <span class="fs-art"></span>
           <span class="fs-text">FREE GAMES <b class="fs-left">0</b></span>
@@ -76,8 +75,10 @@ export class Hud {
     `;
     this.balanceEl = root.querySelector('#m-balance')!;
     this.winEl = root.querySelector('#m-win')!;
+    this.creditPendingEl = root.querySelector('.credit-pending')!;
     this.betEl = root.querySelector('#m-bet')!;
     this.messageEl = root.querySelector('#hud-message')!;
+    this.depositBtn = root.querySelector('#deposit-btn')!;
     this.spinBtn = root.querySelector('#spin-btn')!;
     this.betUp = root.querySelector('#bet-up')!;
     this.betDown = root.querySelector('#bet-down')!;
@@ -113,6 +114,7 @@ export class Hud {
     soundBtn.addEventListener('click', toggleSound);
 
     this.spinBtn.addEventListener('click', cb.onSpin);
+    this.depositBtn.addEventListener('click', cb.onDeposit);
     this.betUp.addEventListener('click', () => {
       sound.click();
       this.stepBet(1);
@@ -158,6 +160,20 @@ export class Hud {
     this.winEl.textContent = v.toFixed(2);
   }
 
+  setCreditPending(pending: boolean): void {
+    this.creditPendingEl.hidden = !pending;
+  }
+
+  lockBet(betCents: number | undefined): void {
+    this.betLocked = betCents !== undefined;
+    const index = BETS.findIndex((bet) => toCents(bet) === betCents);
+    if (index >= 0) {
+      this.betIndex = index;
+      this.renderBet();
+    }
+    this.refresh();
+  }
+
   /** Animate the win meter counting up to `v`, bubbling as it climbs. */
   async countWin(v: number, ms = 700): Promise<void> {
     sound.countStart();
@@ -180,6 +196,12 @@ export class Hud {
 
   message(text: string): void {
     this.messageEl.textContent = text;
+    this.depositBtn.hidden = true;
+  }
+
+  offerDeposit(text: string): void {
+    this.message(text);
+    this.depositBtn.hidden = false;
   }
 
   setBusy(busy: boolean): void {
@@ -256,18 +278,18 @@ export class Hud {
   }
 
   /** The closing tally; `win` in money. */
-  async bonusEnd(win: number): Promise<void> {
+  async bonusEnd(win: number, creditPending: boolean): Promise<void> {
     sound.bonusEnd();
     await this.plaque(
       `<div class="bo-kicker">BACK TO THE SURFACE</div>
        <div class="bo-title bo-amount">${win.toFixed(2)}</div>
-       <div class="bo-sub">${win > 0 ? 'ADDED TO YOUR BALANCE' : 'THE REEF KEPT ITS PEARLS THIS TIME'}</div>`,
+       <div class="bo-sub">${win > 0 ? (creditPending ? CREDIT_PENDING_LABEL : 'ADDED TO YOUR BALANCE') : 'THE REEF KEPT ITS PEARLS THIS TIME'}</div>`,
       3200,
     );
   }
 
   private stepBet(dir: number): void {
-    if (this.busy) return;
+    if (this.busy || this.betLocked) return;
     this.betIndex = Math.min(BETS.length - 1, Math.max(0, this.betIndex + dir));
     this.renderBet();
     this.refresh();
@@ -278,7 +300,8 @@ export class Hud {
   }
 
   private refresh(): void {
-    this.betUp.disabled = this.busy || this.betIndex === BETS.length - 1;
-    this.betDown.disabled = this.busy || this.betIndex === 0;
+    const frozen = this.busy || this.betLocked;
+    this.betUp.disabled = frozen || this.betIndex === BETS.length - 1;
+    this.betDown.disabled = frozen || this.betIndex === 0;
   }
 }

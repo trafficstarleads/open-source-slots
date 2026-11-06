@@ -5,4 +5,7 @@ export const MIGRATED_GAMES: readonly string[] = [
   'discovery-voyage',
   'fairytale',
   'house-of-ra',
+  'pearl-reef',
+  'samurai',
+  'tropic-escape',
 ];
