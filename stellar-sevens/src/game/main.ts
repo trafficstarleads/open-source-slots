@@ -2,13 +2,18 @@
 // first or Pixi hangs on boot when served from the site.
 import 'pixi.js/unsafe-eval';
 import { Application } from 'pixi.js';
-import { mulberry32, playRound, randomSeed, type RoundResult } from '../engine';
+import type { Grid } from '../engine';
 import { Board, BOARD_H, BOARD_W, loadSymbolTextures } from './board';
 import { Hud } from './hud';
 import { initFit } from './fit';
-import { fetchSession, REAL, serverSpin, tellLowBalance, WalletError } from './wallet';
+import { fromCents, postDeposit, roundView, toCents, wallet, type Failure } from './wallet';
 
-const rng = mulberry32(randomSeed());
+const IDLE_GRID: Grid = [
+  ['CHERRY', 'LEMON', 'PLUM'],
+  ['BELL', 'ORANGE', 'GRAPES'],
+  ['MELON', 'STAR', 'SEVEN'],
+];
+const BIG_WIN_BET_MULTIPLE = 20;
 
 function loaderProgress(pct: number): void {
   const fill = document.querySelector<HTMLElement>('.loader-fill');
@@ -39,20 +44,7 @@ async function boot(): Promise<void> {
   const board = new Board(app, await loadSymbolTextures());
   loaderProgress(75);
 
-  // Played for real, the opening balance comes from the casino's books, not
-  // from numbers in this file. If the server cannot be reached the game
-  // still boots, shows zero, and says why.
-  let balance = 1000;
-  let sessionTrouble = '';
-  if (REAL) {
-    try {
-      balance = (await fetchSession()).balanceCents / 100;
-    } catch (err) {
-      balance = 0;
-      sessionTrouble =
-        err instanceof WalletError ? err.message : 'The casino did not answer. Reload to try again.';
-    }
-  }
+  const session = await wallet.session();
   loaderProgress(90);
 
   let busy = false;
@@ -65,68 +57,83 @@ async function boot(): Promise<void> {
       }
       void play();
     },
+    onDeposit: () => postDeposit(window.parent),
   });
-  hud.setBalance(balance);
-  if (sessionTrouble) hud.message(sessionTrouble);
+  hud.lockBet(wallet.pendingBetCents());
+  if (session.kind === 'ready') {
+    hud.setBalance(fromCents(session.balanceCents));
+  } else {
+    showFailure(session.failure);
+  }
 
-  // land an opening grid so the frame never sits empty
-  board.land(playRound(mulberry32(7)).baseSpin.grid);
+  board.land(IDLE_GRID);
+
+  function showFailure(failure: Failure): void {
+    if (failure.offersDeposit) {
+      hud.offerDeposit(failure.message);
+    } else {
+      hud.message(failure.message);
+    }
+    if (failure.balanceCents !== undefined) {
+      hud.setBalance(fromCents(failure.balanceCents));
+    }
+  }
+
+  function finish(): void {
+    hud.lockBet(wallet.pendingBetCents());
+    busy = false;
+    hud.setBusy(false);
+  }
 
   async function play(): Promise<void> {
     const bet = hud.bet;
-    if (hud.balance < bet) {
-      if (!tellLowBalance()) hud.message(REAL ? 'Balance exhausted.' : 'Balance exhausted, refresh to reset the demo.');
-      return;
-    }
+    const betCents = toCents(bet);
 
     busy = true;
     hud.setBusy(true);
     hud.setWin(0);
+    hud.setCreditPending(false);
     hud.message('');
 
-    let round: RoundResult;
-    let settledBalance: number;
-    if (REAL) {
-      // the press starts the show: the reels roll while the server deals,
-      // and the answer lands them (board.spin below)
-      board.prime();
-      try {
-        const dealt = await serverSpin({ type: 'base' }, Math.round(bet * 100));
-        round = dealt.round;
-        settledBalance = dealt.balanceCents / 100;
-        hud.setBalance(settledBalance - dealt.winCents / 100);
-      } catch (err) {
-        hud.message(err instanceof WalletError ? err.message : 'The spin failed. Nothing was charged.');
-        if (err instanceof WalletError && err.balanceCents !== undefined) {
-          hud.setBalance(err.balanceCents / 100);
-        }
-        // the reels come back down where they were
-        await board.abort();
-        busy = false;
-        hud.setBusy(false);
-        return;
-      }
-    } else {
-      hud.setBalance(hud.balance - bet);
-      round = playRound(rng);
-      settledBalance = hud.balance + round.totalWin * bet;
+    const clearance = await wallet.clearToSpin(toCents(hud.balance), betCents);
+    if (clearance.kind === 'refused') {
+      showFailure(clearance.failure);
+      finish();
+      return;
+    }
+    if (clearance.balanceCents !== undefined) {
+      hud.setBalance(fromCents(clearance.balanceCents));
     }
 
-    await board.spin(round.baseSpin.grid);
+    board.prime();
+    const outcome = await wallet.spin(betCents);
+    if (outcome.kind === 'failed') {
+      showFailure(outcome.failure);
+      await board.abort();
+      finish();
+      return;
+    }
 
-    const win = round.totalWin * bet;
+    const view = roundView(outcome.round);
+    hud.setBalance(fromCents(view.balanceAfterBetCents));
+    await board.spin(outcome.round.round.baseSpin.grid);
+
+    const win = view.winAmount;
     if (win > 0) {
-      const show = board.presentWins(round.baseSpin);
+      hud.setCreditPending(view.creditPending);
+      const show = board.presentWins(outcome.round.round.baseSpin);
       await hud.countWin(win);
-      if (win >= bet * 20) await hud.bigWin(win);
+      if (win >= bet * BIG_WIN_BET_MULTIPLE) await hud.bigWin(win);
       await show;
       hud.message(`WIN ${win.toFixed(2)}`);
     }
-    hud.setBalance(settledBalance);
-
-    busy = false;
-    hud.setBusy(false);
+    hud.setBalance(fromCents(view.finalBalanceCents));
+    finish();
   }
+
+  const resumeUnfinishedSpin = (): void => {
+    if (wallet.pendingBetCents() !== undefined) void play();
+  };
 
   // loader away, then the intro waits for its click
   loaderProgress(100);
@@ -143,6 +150,7 @@ async function boot(): Promise<void> {
       intro.classList.add('done');
       setTimeout(() => intro.remove(), 500);
       window.removeEventListener('keydown', onKey, true);
+      resumeUnfinishedSpin();
     };
     const onKey = (e: KeyboardEvent): void => {
       if (e.code === 'Space' || e.code === 'Enter') {
@@ -153,6 +161,8 @@ async function boot(): Promise<void> {
     };
     intro.addEventListener('click', dismiss, { once: true });
     window.addEventListener('keydown', onKey, true);
+  } else {
+    resumeUnfinishedSpin();
   }
 }
 
