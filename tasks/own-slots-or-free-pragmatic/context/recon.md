@@ -1,0 +1,40 @@
+# Recon of the fork (2026-11-06, base `e4d379c`)
+
+Condensed from three read-only passes (engines, browser clients, build plumbing). Paths are relative to the repo root; line numbers are for the free-games family unless a game is named.
+
+## Repository
+
+- 12 independent npm projects, one per game, no root `package.json`, no CI, no lint, no workspaces. Identical resolved versions in all 12 lockfiles: pixi.js 8.19.0, vite 6.4.3, vitest 2.1.9, typescript 5.9.3, tsx 4.23.12, `@types/node` 26.2.0. Tests: `npm test` (vitest), typecheck inside `npm run build` (`tsc --noEmit && vite build`).
+- tsconfig identical in all 12: `moduleResolution: bundler`, `noEmit`, `types: [vite/client, node]`, `lib` with DOM, `include: [src, tests]`. Engine imports are extensionless, so plain Node ESM cannot load them; `tsx`, esbuild or vitest can.
+- Vite `base` comes from `GAME_BASE` (default `/`); public paths collide across games under `/`, so each build needs `GAME_BASE=/play/<slug>/` (verified on bumper-crop). Built bundle of one game: about 1.1 MB; twelve: 8-13 MB. Under Git Bash set `MSYS_NO_PATHCONV=1`.
+- Slug = folder name = `GAME` constant in `src/game/wallet.ts` = tile file name in `tiles/` (1024x1024 webp). Display name only in each `index.html` (title, loader, intro): BUMPER CROP, DISCOVERY VOYAGE, FAIRYTALE, GOLDEN PAPYRUS, HOUSE OF RA, NITRO HOT, PEARL REEF, SAMURAI, SCORCHING HOT, STELLAR SEVENS, THE DYNASTY, TROPIC ESCAPE.
+- `import 'pixi.js/unsafe-eval'` in every `main.ts`: the live CSP has no `unsafe-eval`.
+- This machine: Node 22.19.0, npm 10.9.3, Docker 27.1.1 (daemon running), Postgres 16 service on `localhost:5432` (credentials untested), `psql` at `C:\Program Files\PostgreSQL\16\bin\psql.exe`.
+- Files identical in all 12: `src/engine/rng.ts`, `src/game/fit.ts`, `tsconfig.json`. `wallet.ts` is one file in 9 games (differs by the `GAME` line), bumper-crop differs by about 6 lines, and nitro-hot, scorching-hot, stellar-sevens carry an older variant with no `deliverRound` and no pending round. `main.ts` has four variants (7 games identical; nitro-hot/scorching-hot/stellar-sevens identical; golden-papyrus and bumper-crop unique). `hud.ts` has 10 variants.
+
+## Engines
+
+- Entry in every game: `playRound(rng: RNG): RoundResult` in `src/engine/round.ts` (bumper-crop line 74 with an optional second argument; the others line 11-21). `RNG = { next(): number }` in `src/engine/rng.ts:1-4`; `randInt(rng, max) = floor(rng.next()*max)`. One synchronous call resolves a whole round: free games, retriggers (unbounded), avalanches (bumper-crop capped at `FALL_LIMIT = 20`, `types.ts:57`), ladders, expanding symbols. No game has a mid-round player decision (no gamble, pick or buy).
+- Result: plain JSON-safe object, `totalWin` in multiples of the TOTAL bet. Shapes differ: bumper-crop `{falls[], finalGrid, cascades, totalWin}`; the rest `{baseSpin, bonus?, totalWin}` with game extras (golden-papyrus `bonus.expandingSymbol`, the-dynasty `caller` and `draws`, fairytale `expand` per spin, samurai `wildReels`, pearl-reef `multiplier`, house-of-ra `wayWin`).
+- Lines (`types.ts`): bumper-crop 25, discovery-voyage 10, fairytale 10, golden-papyrus 10, house-of-ra 10, nitro-hot 5, pearl-reef 10, samurai 20, scorching-hot 5, stellar-sevens 5, the-dynasty 20, tropic-escape 9.
+- Bet ladder `ALL_BETS` identical in all 12 (`hud.ts`): 0.1, 0.2, 0.4, 0.6, 0.8, 1, 1.2, 1.4, 1.6, 1.8, 2, 3..10, 15..50 step 5, 75, 100. Real play filters `b <= 5` (`hud.ts` lines: bumper 20, discovery/fairytale/house-of-ra/pearl/samurai/tropic 23, golden 22, nitro/scorching/stellar 19, dynasty 31). 0.10..10.00 is 19 steps, all multiples of 10 cents.
+- Randomness only through the injected `rng.next()`. `randomSeed()` (`rng.ts:23`) uses `Date.now()`/`Math.random()`; the server must never call it. The proven crypto adapter in the sims: `house-of-ra/src/sim/run.ts:44-57` (`crypto.getRandomValues` into a `Uint32Array(1024)`, `buf[i++]/4294967296`).
+- Win arithmetic: all paytable values are integers; `totalWin` is a float sum of `pay/LINES`; `totalWin * LINES` is mathematically an integer. Fractional cents arise at 25 lines (bumper-crop), 9 lines (tropic-escape) and as exact half cents in the-dynasty at bet 0.10. Method: `units = Math.round(totalWin * LINES)`, `winCents = round-half-up(betCents * units / LINES)` in integers.
+- True RTP: `config/rtp.ts` `GAME_RTP` where it exists (fairytale, house-of-ra 95.182099, samurai 95.388785, the-dynasty), else `ACTIVE_REELS.rtp`. `npm run sim:exact` per game enumerates and exits non-zero on a mismatch.
+- No max-win cap in code (`MAX_WIN` is informational). Documented maxima: golden-papyrus 5000x top expanding pay, tropic-escape no cap by design, others between 202x and 5000x.
+
+## Browser clients
+
+- `REAL = window.location.pathname.startsWith('/play/')` (`wallet.ts:18`); anything else is the demo: local balance 1000 (`main.ts:54`), `playRound(mulberry32(randomSeed()))` in the page (`main.ts:209-211` free-games family, `main.ts:180-182` bumper-crop, `main.ts:109-112` stateless), label `DEMO`, title `<NAME> - Demo` (`index.html:6`). The opening grid is `board.land(playRound(mulberry32(7)).baseSpin.grid)` (`main.ts:85`).
+- Server protocol already in the clients: `GET /api/game/session?game=<slug>` -> `{balanceCents, pending}`; `POST /api/game/spin` `{game, key: crypto.randomUUID(), betCents, play:{type:'base'}}` -> `{ok, error?, roundId, round, winCents, costCents, balanceCents, held?, replay?, pending?}`; `POST /api/game/deliver` `{game, roundId}` (not in the 3 stateless games). Same-origin cookies, relative URLs, no token, no `Authorization`, `lang` and `lobby` never read.
+- Retry: one key per `serverSpin` call, 3 attempts, 700 ms flat, only a thrown `fetch` retries; a failed call drops the key. 401 -> `location.href = '/login/'` (breaks inside a frame).
+- The client consumes the full server round to animate (grids per base spin and free spin, line/scatter wins, `freeSpinsWon`, game extras); it does not re-run the engine. Displayed wins are `round.totalWin * bet` in float, not `winCents/100`. The balance shown during a round is `paid - winCents/100` until the animation ends (`main.ts:175`).
+- Low balance: client-side check `hud.balance < bet` (`main.ts:167`) -> `tellLowBalance()` (`wallet.ts:27`) -> `window.parent.postMessage({type:'apex:low-balance'}, window.location.origin)`; the target is the game's own origin, so a cross-origin parent receives nothing. All errors go to one text line `hud.message()` (`hud.ts:181`).
+- No gamble, pick, autoplay, turbo or buy-feature anywhere; SKIP and hurry are visual. Persistence: one `localStorage` key `<slug>-sound` (nitro-hot's key is wrongly `scorching-hot-sound`). No debug hooks.
+- Info screen: `gameinfo.ts` class `GameInfo`, overlay rebuilt per open; the credit goes beside the last `gi-keys` line (line 121 bumper-crop, 104 discovery-voyage, 144 fairytale, 105 golden-papyrus, 112 house-of-ra, 79 nitro-hot, 128 pearl-reef, 104 samurai, 86 scorching-hot, 85 stellar-sevens, 123 the-dynasty, 119 tropic-escape). House copy is upper case, no dashes in what a player reads (`bumper-crop/src/game/gameinfo.ts:2-3`).
+- Cosmetic `Math.random` (flicker, particles) in `board.ts` and `hud.ts:60` (the-dynasty) decides no outcome.
+
+## Hub facts read for this half
+
+- `GameService.UpdateImage` (`Casino-Game-Aggregator/proto/gamehub/v1/catalog.proto`): `identity` = game slug as in `ListCasino`, `key` = `IMAGE_KEY_1X1|2X3|4X3|3X2`, `file` = bytes (webp/png/jpeg/avif/gif, at most 10 MiB, format sniffed). Metadata `x-catalog-admin-key` = the hub's `CATALOG_ADMIN_KEY`; missing/wrong -> `UNAUTHENTICATED`, unset on the hub -> `UNAVAILABLE`, unknown slug -> `NOT_FOUND`. gRPC port 9090 by default. The call is unchanged by this task (hub `api-endpoints-diff.md`).
+- Hub catalog symbols (origin `tasks.md` T001): tropic-escape, stellar-sevens, bumper-crop, golden-papyrus, nitro-hot, scorching-hot, pearl-reef, discovery-voyage, house-of-ra, fairytale, samurai, the-dynasty - equal to this repo's folder names.

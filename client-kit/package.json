@@ -1,0 +1,22 @@
+{
+  "name": "client-kit",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Shared browser module of the game windows: launch token, authorised calls, spin key, messages",
+  "engines": {
+    "node": ">=22.12.0 <23"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@vitest/coverage-v8": "5.1.0",
+    "jsdom": "29.1.1",
+    "typescript": "5.9.3",
+    "vitest": "5.1.0",
+    "yaml": "2.9.1"
+  }
+}

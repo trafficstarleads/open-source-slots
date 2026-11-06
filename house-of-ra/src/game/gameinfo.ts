@@ -110,6 +110,7 @@ export class GameInfo {
           <li>MALFUNCTION VOIDS ALL PAYS AND PLAYS.</li>
         </ul>
         <div class="gi-keys">SPACE - SPIN &nbsp;&nbsp; S - SOUND ON/OFF</div>
+        <div class="gi-credit">Art by APEXSLOTS (apexslots.eu), CC BY 4.0</div>
       </div>
     `;
     this.el.hidden = false;

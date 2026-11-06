@@ -1,0 +1,40 @@
+{
+  "name": "slots-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Game server of the own slots: draws the rounds and talks to the game hub",
+  "engines": {
+    "node": ">=22.12.0 <23"
+  },
+  "scripts": {
+    "codegen": "openapi-typescript ../tasks/own-slots-or-free-pragmatic/from-origin/contract.openapi.yaml -o src/hub/generated.ts",
+    "codegen:check": "openapi-typescript ../tasks/own-slots-or-free-pragmatic/from-origin/contract.openapi.yaml -o src/hub/generated.ts --check",
+    "build": "node build.mjs",
+    "build:games": "node scripts/build-games.mjs",
+    "migrate": "node-pg-migrate up --migrations-dir migrations",
+    "dev:stub": "tsx dev/stub-hub.ts",
+    "upload-tiles": "tsx scripts/upload-tiles.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@types/pg": "8.23.1",
+    "@vitest/coverage-v8": "5.1.0",
+    "esbuild": "0.28.2",
+    "openapi-typescript": "7.13.0",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "5.1.0",
+    "yaml": "2.9.1"
+  },
+  "dependencies": {
+    "@fastify/static": "10.1.10",
+    "@grpc/grpc-js": "1.14.7",
+    "@grpc/proto-loader": "0.8.1",
+    "fastify": "5.12.8",
+    "node-pg-migrate": "9.0.0",
+    "pg": "8.23.1"
+  }
+}

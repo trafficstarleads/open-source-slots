@@ -1,2 +1,7 @@
 node_modules/
 dist/
+server/public/
+server/coverage/
+.env
+.env.*
+!.env.example

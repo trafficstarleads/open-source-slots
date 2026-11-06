@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package gamehub.v1;
+
+// Java classes stay in the proto package, like gateway.proto and webhook.proto: a java_package
+// here would move them away from `gamehub.v1.Gateway`, which existing JVM clients import.
+
+// Editing of the shared catalog: game and provider images.
+//
+// The hub's catalog is one for all operators, so an image written here changes for everyone at
+// once. No operator is named here and the `x-operator-*` metadata is not read. Every call must
+// instead carry the shared catalogue key in the `x-catalog-admin-key` metadata (the hub's
+// `CATALOG_ADMIN_KEY`). A missing, empty or different key is refused with `UNAUTHENTICATED` before
+// the message is decoded; with no key configured on the hub every call is `UNAVAILABLE`.
+//
+// The file arrives as bytes. The hub itself puts it into its bucket under a new key derived from
+// the content - `casino/game/<identity>/<key>-<sha12>.<ext>` - and writes only the *path* into the
+// catalog. The key is always new because the CDN serves objects as immutable for 30 days: nobody
+// would see an overwrite under the old key. The format is determined by the file signature, not by
+// what the client says.
+//
+// A write changes one key and leaves the others alone.
+//
+// A refusal carries `x-error-code`: `NOT_FOUND` - no such game or provider, `INVALID_ARGUMENT` -
+// the key is not set, the file is empty, too large or not an image, `UNAVAILABLE` - the catalogue
+// key or the storage is not configured, or the storage did not answer.
+service GameService {
+  rpc UpdateImage(UpdateGameImageRequest) returns (UpdateImageResponse);
+}
+
+service ProviderService {
+  rpc UpdateImage(UpdateProviderImageRequest) returns (UpdateImageResponse);
+}
+
+// The strict set of image keys. The catalog has no others.
+enum ImageKey {
+  IMAGE_KEY_UNSPECIFIED = 0;
+
+  // `1x1`, square.
+  IMAGE_KEY_1X1 = 1;
+
+  // `2x3`, portrait.
+  IMAGE_KEY_2X3 = 2;
+
+  // `4x3`, landscape.
+  IMAGE_KEY_4X3 = 3;
+
+  // `3x2`, the provider's horizontal logo.
+  IMAGE_KEY_3X2 = 4;
+}
+
+message UpdateGameImageRequest {
+  // The game slug, as it comes in `ListCasino`.
+  string identity = 1;
+
+  ImageKey key = 2;
+
+  // The whole file.
+  bytes file = 3;
+}
+
+message UpdateProviderImageRequest {
+  // The provider slug, as it comes in `ListCasino`.
+  string identity = 1;
+
+  ImageKey key = 2;
+
+  bytes file = 3;
+}
+
+message UpdateImageResponse {
+  // The written path with no host and no leading `/`, for example
+  // `casino/game/book_of_dead/2x3-1a2b3c4d5e6f.webp`. The link is the hub's CDN address plus this
+  // path.
+  string path = 1;
+}
