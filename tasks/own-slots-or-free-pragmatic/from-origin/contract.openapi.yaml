@@ -1,0 +1,321 @@
+openapi: 3.1.0
+info:
+  title: Game hub webhook for the OWNSLOTS vendor
+  version: 0.1.0
+  description: >
+    The three calls the game server makes to the hub for a spin of an own slot, and the launch
+    URL the hub hands to the player's browser. A spin is two money calls, never one: `bet`, then
+    `win` when the win is above zero. Bet and win have their own transaction ids, so a repeat
+    returns the first answer and moves nothing.
+servers:
+  - url: http://hub.internal:8080
+    description: The hub's webhook listener.
+paths:
+  /webhook/{partner}/balance:
+    post:
+      operationId: ownslotsBalance
+      summary: Balance of the player the token belongs to.
+      parameters:
+        - $ref: '#/components/parameters/Partner'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BalanceRequest'
+            example:
+              token: 3f9c0e5a7b1d4c2e8a6f1b2c3d4e5f60
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Refused'
+        '503':
+          $ref: '#/components/responses/Retry'
+  /webhook/{partner}/bet:
+    post:
+      operationId: ownslotsBet
+      summary: Debit the bet of one spin from the player's balance.
+      description: >
+        Moves money once per `transactionId`. The round is created by the first call that names
+        its `roundId`. `roundClose` is true when no `win` call will follow, that is for a spin that
+        won nothing.
+      parameters:
+        - $ref: '#/components/parameters/Partner'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoneyRequest'
+            examples:
+              spinWithWin:
+                summary: A bet whose round has a win to follow.
+                value:
+                  token: 3f9c0e5a7b1d4c2e8a6f1b2c3d4e5f60
+                  transactionId: 0b1f6a52-7d3e-4c1a-9a58-2e4d6f8a1c03:bet
+                  roundId: 0b1f6a52-7d3e-4c1a-9a58-2e4d6f8a1c03
+                  amountCents: 100
+                  roundClose: false
+              spinWithoutWin:
+                summary: A bet whose round won nothing and is closed by this call.
+                value:
+                  token: 3f9c0e5a7b1d4c2e8a6f1b2c3d4e5f60
+                  transactionId: 5d2c8e41-90ab-4f7e-8b36-1a2b3c4d5e6f:bet
+                  roundId: 5d2c8e41-90ab-4f7e-8b36-1a2b3c4d5e6f
+                  amountCents: 100
+                  roundClose: true
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Refused'
+        '503':
+          $ref: '#/components/responses/Retry'
+  /webhook/{partner}/win:
+    post:
+      operationId: ownslotsWin
+      summary: Credit the win of one spin to the player's balance.
+      description: >
+        Sent after the `bet` call of the same round was accepted. `amountCents` is the whole win
+        of the round, free games included, rounded to the nearest cent, and is above zero; a
+        round without a win has no `win` call. `roundClose` is true, the round ends here.
+      parameters:
+        - $ref: '#/components/parameters/Partner'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoneyRequest'
+            example:
+              token: 3f9c0e5a7b1d4c2e8a6f1b2c3d4e5f60
+              transactionId: 0b1f6a52-7d3e-4c1a-9a58-2e4d6f8a1c03:win
+              roundId: 0b1f6a52-7d3e-4c1a-9a58-2e4d6f8a1c03
+              amountCents: 4550
+              roundClose: true
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Refused'
+        '503':
+          $ref: '#/components/responses/Retry'
+components:
+  parameters:
+    Partner:
+      name: partner
+      in: path
+      required: true
+      description: Identity of the partner row of the OWNSLOTS vendor.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+    Signature:
+      name: X-Signature
+      in: header
+      required: true
+      description: >
+        Lower-case hexadecimal HMAC-SHA256 of the raw request body, keyed with the partner's
+        `secretKey`. It is checked before anything else of the body is read.
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{64}$'
+  responses:
+    Ok:
+      description: The call was accepted, or it repeats an accepted call and gets the first answer.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Accepted'
+          example:
+            status: ok
+            balanceCents: 14900
+            currency: USD
+    Unauthorized:
+      description: The signature is missing or wrong. Nothing moved.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Refused'
+          example:
+            status: refused
+            code: UNAUTHORIZED
+            message: bad signature
+    Forbidden:
+      description: >
+        The caller's address is not in the partner's allow-list. No body. Nothing moved. This is a
+        configuration fault, so the call is retried later and not abandoned.
+    NotFound:
+      description: >
+        The partner row is unknown or disabled, or its adapter is not compiled in. A plain-text
+        body. Nothing moved. The call is retried later and not abandoned.
+    Refused:
+      description: >
+        A definite no. Nothing moved. For a `bet`, `INSUFFICIENT_FUNDS`, `LIMIT_EXCEEDED` and
+        `REFUSED` are final for that round: the hub keeps the refused leg unconfirmed, so
+        repeating the call after a deposit would debit it. The game server never repeats a
+        refused bet, and the next spin uses a new `roundId`. `SESSION_NOT_FOUND` is lifted by the
+        player reopening the game.
+
+        A refusal of a `win` is never final for the game server, because the bet is already
+        debited. Whatever the code, except `CONFLICT` and `BAD_REQUEST`, the round stays "win
+        pending" and the call is repeated with growing pauses, with an alert raised. `CONFLICT`
+        and `BAD_REQUEST` on a `win` are parked for an operator to resolve.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Refused'
+          example:
+            status: refused
+            code: INSUFFICIENT_FUNDS
+            message: balance is below the bet
+    Retry:
+      description: >
+        No usable answer. `BUSY` means nothing moved. `INTERNAL` means the outcome is unknown. In
+        both cases repeat the same call with the same transaction id until it is answered.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Retry'
+          example:
+            status: retry
+            code: BUSY
+            message: wallet is busy
+  schemas:
+    BalanceRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The session token the hub put in the launch URL.
+    MoneyRequest:
+      type: object
+      additionalProperties: false
+      required: [token, transactionId, roundId, amountCents, roundClose]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: >
+            The launch token of the session that opened the round. A call may come after the
+            24 hour session has lapsed: the hub then restores the session from the round only when
+            this token is the one the round was opened with, so the game server keeps each
+            round's token in its journal and sends it again on every repeat.
+        transactionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: >
+            Unique per money call and exactly the round id, a colon and the last segment of the
+            path, `bet` or `win`. The hub refuses any other value with `BAD_REQUEST`, so a signed
+            body cannot be replayed on the other path. The same id always means the same call.
+        roundId:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: >
+            Opaque, minted by the game server for one accepted spin and never reused, also not by
+            another player.
+        amountCents:
+          type: integer
+          minimum: 1
+          maximum: 1000000000
+          description: Whole US cents. A bet is at most 1000 cents; a win has no cap below the maximum.
+        roundClose:
+          type: boolean
+          description: True on the last call of the round.
+    Accepted:
+      type: object
+      additionalProperties: false
+      required: [status, balanceCents, currency]
+      properties:
+        status:
+          type: string
+          const: ok
+        balanceCents:
+          type: integer
+          minimum: 0
+          description: The player's balance after the call, in cents.
+        currency:
+          type: string
+          const: USD
+    Refused:
+      type: object
+      additionalProperties: false
+      required: [status, code, message]
+      properties:
+        status:
+          type: string
+          const: refused
+        code:
+          type: string
+          enum:
+            - UNAUTHORIZED
+            - INSUFFICIENT_FUNDS
+            - LIMIT_EXCEEDED
+            - SESSION_NOT_FOUND
+            - CONFLICT
+            - BAD_REQUEST
+            - REFUSED
+          description: >
+            UNAUTHORIZED: wrong or missing signature. INSUFFICIENT_FUNDS: the bet is above the
+            balance. LIMIT_EXCEEDED: a limit of the platform stops the bet. SESSION_NOT_FOUND:
+            the token is unknown or expired. CONFLICT: the transaction id was used for another
+            amount or another round, or the other leg of the round contradicts this one.
+            BAD_REQUEST: the body is unreadable, an amount is not whole cents above zero, or the
+            last path segment is not `balance`, `bet` or `win`.
+            REFUSED: any other definite refusal (blocked player, currency mismatch).
+        message:
+          type: string
+    Retry:
+      type: object
+      additionalProperties: false
+      required: [status, code, message]
+      properties:
+        status:
+          type: string
+          const: retry
+        code:
+          type: string
+          enum: [BUSY, INTERNAL]
+        message:
+          type: string
+x-launch-url:
+  description: >
+    Not an HTTP path of the hub: the URL `launch` returns for the player's browser. The game
+    server serves it. Query values are URL-encoded.
+  template: '{playUrl}/play/{symbol}?token={token}&lang={locale}&lobby={lobbyUrl}'
+  parameters:
+    playUrl: https origin of the game server taken from the partner's config, without a trailing slash
+    symbol: the game's slug, one of the twelve in the catalog
+    token: the hub session token, 32 lower-case hexadecimal characters
+    locale: the player's language tag
+    lobbyUrl: the site's lobby address; may be empty
