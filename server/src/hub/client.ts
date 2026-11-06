@@ -3,10 +3,13 @@ import type { components } from './generated';
 import { SIGNATURE_HEADER, signBody } from './sign';
 
 type Schemas = components['schemas'];
-type HubLeg = 'balance';
-type HubRequest = Schemas['BalanceRequest'];
+type MoneyRequest = Schemas['MoneyRequest'];
+type HubLeg = 'balance' | 'bet' | 'win';
+type HubRequest = Schemas['BalanceRequest'] | MoneyRequest;
 
+export type MoneyCall = Omit<MoneyRequest, 'transactionId'>;
 export type RefusalCode = Schemas['Refused']['code'];
+export type BetRefusal = RefusalCode | 'FORBIDDEN' | 'NOT_FOUND';
 export type RetryCode = Schemas['Retry']['code'];
 
 export type HubAnswer =
@@ -22,6 +25,8 @@ export interface HubLogger {
 
 export interface HubClient {
   readonly balance: (token: string) => Promise<HubAnswer>;
+  readonly bet: (call: MoneyCall) => Promise<HubAnswer>;
+  readonly win: (call: MoneyCall) => Promise<HubAnswer>;
 }
 
 const STATUS_OK = 200;
@@ -100,7 +105,13 @@ export function createHubClient(settings: HubSettings, logger: HubLogger): HubCl
     }
   }
 
+  function money(leg: 'bet' | 'win', { token, roundId, amountCents, roundClose }: MoneyCall): Promise<HubAnswer> {
+    return call(leg, { token, transactionId: `${roundId}:${leg}`, roundId, amountCents, roundClose });
+  }
+
   return {
     balance: (token) => call('balance', { token }),
+    bet: (moneyCall) => money('bet', moneyCall),
+    win: (moneyCall) => money('win', moneyCall),
   };
 }

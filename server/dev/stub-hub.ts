@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { DEFAULT_PORT } from '../src/config';
+import { applyMigrations } from '../src/db/migrate';
 import { isEntryPoint } from '../src/entry';
 import { isGameSymbol } from '../src/games/registry';
 import type { components } from '../src/hub/generated';
@@ -17,11 +18,18 @@ export interface StubHubOptions {
   readonly gameOrigin: string;
 }
 
+type MoneyLeg = 'bet' | 'win';
+
 export interface RecordedCall {
-  readonly leg: 'balance';
+  readonly leg: 'balance' | MoneyLeg;
   readonly signature: string;
   readonly rawBody: string;
-  readonly body: Schemas['BalanceRequest'];
+  readonly body: Schemas['BalanceRequest'] | Schemas['MoneyRequest'];
+}
+
+interface StubAnswer {
+  readonly status: number;
+  readonly body: Schemas['Refused'] | Schemas['Retry'];
 }
 
 export interface StubHub {
@@ -48,39 +56,95 @@ const DEFAULT_STUB_PORT = 9100;
 const STUB_HOST = '127.0.0.1';
 const DEV_PARTNER = 'ownslots';
 const DEV_HMAC_KEY = 'dev-hmac-key';
+const DEV_DATABASE_URL = 'postgres://postgres:test@localhost:5434/postgres';
 const CURRENCY = 'USD';
 const MAX_TOKEN_LENGTH = 128;
+const MAX_ROUND_ID_LENGTH = 64;
+const MAX_AMOUNT_CENTS = 1_000_000_000;
+const MONEY_REQUEST_KEYS = ['amountCents', 'roundClose', 'roundId', 'token', 'transactionId'].join();
+const MONEY_LEGS: readonly MoneyLeg[] = ['bet', 'win'];
 const WHOLE_POSITIVE_NUMBER = /^[1-9]\d*$/;
 const GAME_ORIGIN_PLACEHOLDER = '__GAME_ORIGIN__';
 const HOST_PAGE = new URL('./host.html', import.meta.url);
 const INITIAL_BALANCES_CENTS: ReadonlyArray<readonly [string, number]> = [
   ['tok-rich', 10_000],
   ['tok-rich-2', 10_000],
+  ['tok-poor', 5],
+  ['tok-limit', 10_000],
+  ['tok-bet-internal', 10_000],
+  ['tok-win-busy', 10_000],
 ];
 
 function refusal(code: Schemas['Refused']['code'], message: string): Schemas['Refused'] {
   return { status: 'refused', code, message };
 }
 
+function retry(code: Schemas['Retry']['code'], message: string): Schemas['Retry'] {
+  return { status: 'retry', code, message };
+}
+
+const SCRIPTED_MONEY_ANSWERS: Readonly<Record<MoneyLeg, ReadonlyMap<string, StubAnswer>>> = {
+  bet: new Map([
+    ['tok-limit', { status: 422, body: refusal('LIMIT_EXCEEDED', 'a limit of the platform stops the bet') }],
+    ['tok-bet-internal', { status: 503, body: retry('INTERNAL', 'the bet failed') }],
+  ]),
+  win: new Map([['tok-win-busy', { status: 503, body: retry('BUSY', 'wallet is busy') }]]),
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isToken(value: unknown): value is string {
+  return typeof value === 'string' && value.length >= 1 && value.length <= MAX_TOKEN_LENGTH;
+}
+
 function isBalanceRequest(value: unknown): value is Schemas['BalanceRequest'] {
-  if (typeof value !== 'object' || value === null) {
+  return isRecord(value) && Object.keys(value).join() === 'token' && isToken(value.token);
+}
+
+function isMoneyRequest(value: unknown, leg: MoneyLeg): value is Schemas['MoneyRequest'] {
+  if (!isRecord(value) || Object.keys(value).sort().join() !== MONEY_REQUEST_KEYS) {
     return false;
   }
-  const keys = Object.keys(value);
-  const { token } = value as { token?: unknown };
+  const { token, transactionId, roundId, amountCents, roundClose } = value;
   return (
-    keys.length === 1 &&
-    keys[0] === 'token' &&
-    typeof token === 'string' &&
-    token.length >= 1 &&
-    token.length <= MAX_TOKEN_LENGTH
+    isToken(token) &&
+    typeof roundId === 'string' &&
+    roundId.length >= 1 &&
+    roundId.length <= MAX_ROUND_ID_LENGTH &&
+    transactionId === `${roundId}:${leg}` &&
+    typeof amountCents === 'number' &&
+    Number.isInteger(amountCents) &&
+    amountCents >= 1 &&
+    amountCents <= MAX_AMOUNT_CENTS &&
+    typeof roundClose === 'boolean'
   );
+}
+
+function authenticated(
+  options: StubHubOptions,
+  request: { params: { partner: string }; body: SignedBody; headers: Record<string, unknown> },
+  reply: FastifyReply,
+): { signature: string; rawBody: string; json: unknown } | null {
+  if (request.params.partner !== options.partner) {
+    reply.code(404).type('text/plain').send('unknown partner');
+    return null;
+  }
+  const { rawBody, json } = request.body;
+  const signature = request.headers[SIGNATURE_HEADER.toLowerCase()];
+  if (typeof signature !== 'string' || !signatureMatches(options.secretKey, rawBody, signature)) {
+    reply.code(401).send(refusal('UNAUTHORIZED', 'bad signature'));
+    return null;
+  }
+  return { signature, rawBody: rawBody.toString('utf8'), json };
 }
 
 function buildStubHub(options: StubHubOptions): { app: FastifyInstance; calls: RecordedCall[] } {
   const app = Fastify({ logger: false });
   const calls: RecordedCall[] = [];
   const balancesCents = new Map<string, number>(INITIAL_BALANCES_CENTS);
+  const bookedAnswers = new Map<string, Schemas['Accepted']>();
 
   app.removeContentTypeParser('application/json');
   app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (request, rawBody: Buffer, done) => {
@@ -93,25 +157,59 @@ function buildStubHub(options: StubHubOptions): { app: FastifyInstance; calls: R
     done(null, { rawBody, json } satisfies SignedBody);
   });
 
+  function accepted(balanceCents: number): Schemas['Accepted'] {
+    return { status: 'ok', balanceCents, currency: CURRENCY };
+  }
+
   app.post<{ Params: { partner: string }; Body: SignedBody }>('/webhook/:partner/balance', async (request, reply) => {
-    if (request.params.partner !== options.partner) {
-      return reply.code(404).type('text/plain').send('unknown partner');
+    const signed = authenticated(options, request, reply);
+    if (signed === null) {
+      return reply;
     }
-    const { rawBody, json } = request.body;
-    const signature = request.headers[SIGNATURE_HEADER.toLowerCase()];
-    if (typeof signature !== 'string' || !signatureMatches(options.secretKey, rawBody, signature)) {
-      return reply.code(401).send(refusal('UNAUTHORIZED', 'bad signature'));
-    }
-    if (!isBalanceRequest(json)) {
+    if (!isBalanceRequest(signed.json)) {
       return reply.code(422).send(refusal('BAD_REQUEST', 'unreadable body'));
     }
-    calls.push({ leg: 'balance', signature, rawBody: rawBody.toString('utf8'), body: json });
-    const balanceCents = balancesCents.get(json.token);
+    calls.push({ leg: 'balance', signature: signed.signature, rawBody: signed.rawBody, body: signed.json });
+    const balanceCents = balancesCents.get(signed.json.token);
     if (balanceCents === undefined) {
       return reply.code(422).send(refusal('SESSION_NOT_FOUND', 'token is unknown or expired'));
     }
-    return { status: 'ok', balanceCents, currency: CURRENCY } satisfies Schemas['Accepted'];
+    return accepted(balanceCents);
   });
+
+  for (const leg of MONEY_LEGS) {
+    app.post<{ Params: { partner: string }; Body: SignedBody }>(`/webhook/:partner/${leg}`, async (request, reply) => {
+      const signed = authenticated(options, request, reply);
+      if (signed === null) {
+        return reply;
+      }
+      if (!isMoneyRequest(signed.json, leg)) {
+        return reply.code(422).send(refusal('BAD_REQUEST', 'body breaks the contract'));
+      }
+      const money = signed.json;
+      calls.push({ leg, signature: signed.signature, rawBody: signed.rawBody, body: money });
+      const balanceCents = balancesCents.get(money.token);
+      if (balanceCents === undefined) {
+        return reply.code(422).send(refusal('SESSION_NOT_FOUND', 'token is unknown or expired'));
+      }
+      const scripted = SCRIPTED_MONEY_ANSWERS[leg].get(money.token);
+      if (scripted !== undefined) {
+        return reply.code(scripted.status).send(scripted.body);
+      }
+      const booked = bookedAnswers.get(money.transactionId);
+      if (booked !== undefined) {
+        return booked;
+      }
+      if (leg === 'bet' && balanceCents < money.amountCents) {
+        return reply.code(422).send(refusal('INSUFFICIENT_FUNDS', 'balance is below the bet'));
+      }
+      const newBalanceCents = leg === 'bet' ? balanceCents - money.amountCents : balanceCents + money.amountCents;
+      balancesCents.set(money.token, newBalanceCents);
+      const answer = accepted(newBalanceCents);
+      bookedAnswers.set(money.transactionId, answer);
+      return answer;
+    });
+  }
 
   app.get('/calls', async () => calls);
 
@@ -156,6 +254,8 @@ export async function startStubHub(options: StubHubOptions): Promise<StubHub> {
 }
 
 export async function startDevStack(env: NodeJS.ProcessEnv): Promise<DevStack> {
+  const databaseUrl = env.DATABASE_URL ?? DEV_DATABASE_URL;
+  await applyMigrations(databaseUrl);
   const stub = await startStubHub({
     partner: DEV_PARTNER,
     secretKey: DEV_HMAC_KEY,
@@ -168,6 +268,7 @@ export async function startDevStack(env: NodeJS.ProcessEnv): Promise<DevStack> {
     HUB_PARTNER: DEV_PARTNER,
     HUB_SECRET_KEY: DEV_HMAC_KEY,
     FRAME_ANCESTORS: `http://localhost:${stubPort} http://127.0.0.1:${stubPort}`,
+    DATABASE_URL: databaseUrl,
     ...env,
   });
   const { port } = app.server.address() as AddressInfo;

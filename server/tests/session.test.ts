@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
+  bearer,
   closedPortUrl,
   startScriptedHub,
   startStack,
@@ -12,10 +13,6 @@ import {
 const SESSION_URL = '/api/game/session?game=stellar-sevens';
 const RICH_BALANCE_CENTS = 10_000;
 const MAX_TOKEN_LENGTH = 128;
-
-function bearer(launchToken: string): Record<string, string> {
-  return { authorization: `Bearer ${launchToken}` };
-}
 
 describe('the session of a game window', () => {
   let stack: Stack;

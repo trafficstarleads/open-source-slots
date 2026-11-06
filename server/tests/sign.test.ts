@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startDevStack, type RecordedCall } from '../dev/stub-hub';
+import { createTestDatabase } from './helpers/db';
 import { createHubClient } from '../src/hub/client';
 import { signBody } from '../src/hub/sign';
 import { loadConfig } from '../src/config';
@@ -289,7 +290,14 @@ describe('the stub hub', () => {
 
 describe('the development stack', () => {
   it('runs the stub hub and the game server together, signed and framed for each other', async () => {
-    const dev = await startDevStack({ PORT: '0', STUB_PORT: '0', PUBLIC_DIR: TEST_PUBLIC_DIR, LOG_LEVEL: 'silent' });
+    const database = await createTestDatabase();
+    const dev = await startDevStack({
+      PORT: '0',
+      STUB_PORT: '0',
+      PUBLIC_DIR: TEST_PUBLIC_DIR,
+      LOG_LEVEL: 'silent',
+      DATABASE_URL: database.url,
+    });
     try {
       const session = await fetch(`${dev.gameUrl}/api/game/session?game=stellar-sevens`, {
         headers: { authorization: 'Bearer tok-rich' },
@@ -301,6 +309,7 @@ describe('the development stack', () => {
       expect(dev.stub.calls).toHaveLength(1);
     } finally {
       await dev.close();
+      await database.close();
     }
   });
 });

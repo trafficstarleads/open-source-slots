@@ -13,7 +13,8 @@ const STELLAR_PAGE = readFileSync(
   'utf8',
 );
 const HUB_URL = 'http://hub.example.com:8080';
-const REQUIRED_SETTINGS = ['FRAME_ANCESTORS', 'HUB_SECRET_KEY', 'HUB_BASE_URL'] as const;
+const REQUIRED_SETTINGS = ['FRAME_ANCESTORS', 'HUB_SECRET_KEY', 'HUB_BASE_URL', 'DATABASE_URL'] as const;
+const DATABASE_URL = 'postgres://app@db.example.com:5432/slots';
 const TWELVE_SYMBOLS = [
   'tropic-escape',
   'stellar-sevens',
@@ -135,12 +136,14 @@ describe('the settings', () => {
       HUB_BASE_URL: HUB_URL,
       HUB_SECRET_KEY: 'k',
       FRAME_ANCESTORS: TEST_FRAME_ANCESTORS,
+      DATABASE_URL,
     });
 
     expect(config).toEqual({
       port: 3000,
       publicDir: resolve('public'),
       frameAncestors: TEST_FRAME_ANCESTORS,
+      databaseUrl: DATABASE_URL,
       logLevel: 'info',
       hub: { baseUrl: HUB_URL, partner: 'ownslots', secretKey: 'k', callTimeoutMs: 10_000 },
     });
@@ -183,7 +186,7 @@ describe('the settings', () => {
   });
 
   it('names every missing required setting at once', () => {
-    expect(() => loadConfig({})).toThrow('FRAME_ANCESTORS, HUB_SECRET_KEY, HUB_BASE_URL');
+    expect(() => loadConfig({})).toThrow('FRAME_ANCESTORS, HUB_SECRET_KEY, HUB_BASE_URL, DATABASE_URL');
   });
 
   it.each([

@@ -7,7 +7,7 @@ const DEFAULT_PUBLIC_DIR = 'public';
 const DEFAULT_LOG_LEVEL = 'info';
 const DEFAULT_HUB_CALL_TIMEOUT_MS = 10_000;
 const MAX_HUB_CALL_TIMEOUT_MS = 600_000;
-const REQUIRED_SETTINGS = ['FRAME_ANCESTORS', 'HUB_SECRET_KEY', 'HUB_BASE_URL'] as const;
+const REQUIRED_SETTINGS = ['FRAME_ANCESTORS', 'HUB_SECRET_KEY', 'HUB_BASE_URL', 'DATABASE_URL'] as const;
 const HUB_URL_PROTOCOLS: readonly string[] = ['http:', 'https:'];
 const TRAILING_SLASHES = /\/+$/;
 const WHOLE_NUMBER = /^\d+$/;
@@ -27,6 +27,7 @@ export interface AppConfig {
   readonly port: number;
   readonly publicDir: string;
   readonly frameAncestors: string;
+  readonly databaseUrl: string;
   readonly logLevel: string;
   readonly hub: HubSettings;
 }
@@ -87,6 +88,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
     port: readWholeNumber(env, 'PORT', DEFAULT_PORT, 0, MAX_PORT),
     publicDir: resolve(read(env, 'PUBLIC_DIR') ?? DEFAULT_PUBLIC_DIR),
     frameAncestors: required.FRAME_ANCESTORS,
+    databaseUrl: required.DATABASE_URL,
     logLevel: read(env, 'LOG_LEVEL') ?? DEFAULT_LOG_LEVEL,
     hub: loadHubSettings(env, required),
   });

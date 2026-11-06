@@ -1,4 +1,4 @@
-import type { FastifyReply } from 'fastify';
+import type { FastifyError, FastifyInstance, FastifyReply } from 'fastify';
 
 export type BrowserErrorCode =
   | 'session_expired'
@@ -17,6 +17,18 @@ const STATUS_OF: Readonly<Record<BrowserErrorCode, number>> = {
   unavailable: 503,
 };
 
-export function sendError(reply: FastifyReply, code: BrowserErrorCode): FastifyReply {
-  return reply.code(STATUS_OF[code]).send({ ok: false, error: code });
+const FIRST_SERVER_ERROR_STATUS = 500;
+
+export function sendError(reply: FastifyReply, code: BrowserErrorCode, balanceCents?: number): FastifyReply {
+  return reply.code(STATUS_OF[code]).send({ ok: false, error: code, balanceCents });
+}
+
+export function registerBrowserErrorHandler(api: FastifyInstance): void {
+  api.setErrorHandler((error: FastifyError, request, reply) => {
+    if (error.statusCode !== undefined && error.statusCode < FIRST_SERVER_ERROR_STATUS) {
+      return sendError(reply, 'bad_request');
+    }
+    request.log.error({ err: error }, 'browser_request_failed');
+    return sendError(reply, 'busy');
+  });
 }
