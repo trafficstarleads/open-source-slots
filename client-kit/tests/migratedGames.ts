@@ -8,4 +8,7 @@ export const MIGRATED_GAMES: readonly string[] = [
   'pearl-reef',
   'samurai',
   'tropic-escape',
+  'the-dynasty',
+  'golden-papyrus',
+  'bumper-crop',
 ];
