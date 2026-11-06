@@ -102,3 +102,16 @@
 - Outcome: fixed — the DEPOSIT clause is gone from all twelve headers, each now ending where the base revision's first sentence ended (`... the closing tally).`, `... BIG WIN plaque.`, `... the whole barn ladder bonus.`)
 - Red: N/A: a comment, no behavior
 - Sweep: `grep -rn "DEPOSIT button" <twelve games>/src` · 0
+
+### r2 · slots-server reviews/pr-1/review.md #1 — The safe-integer upper bound of a hub balance has no test
+- Where: `server/src/hub/client.ts:50-52` · `isWholeCents`
+- Code: `return Number.isSafeInteger(value) && (value as number) >= 0;`
+- Why: failure scenario. The guard was `typeof value === 'number' && Number.isInteger(value) && value >= 0` (`e8fd13f:server/src/hub/client.ts:54`). A hub answer `{"status":"ok","balanceCents":9007199254740993,"currency":"USD"}` was accepted before and is now `no_answer` plus a `hub_answer_unreadable` warning. r1 #7's outcome rests on this rule ("the hub client accepts only safe integers (`isWholeCents`), so every accepted balance fits the column and reads back exactly"), yet the only test the round adds is `server/tests/spin-idempotency.test.ts` with a balance of 3,000,000,000, far below 2^53. The unreadable-answer table at `server/tests/sign.test.ts:197-205` has `1.5` and `-1` but nothing above `Number.MAX_SAFE_INTEGER`; a grep of `server/tests` and `client-kit/tests` for `MAX_SAFE`, `isSafeInteger`, `2 ** 53` and `9007199254740` finds only `server/tests/money.test.ts:36`, which tests another function. The changed upper bound is unpinned.
+- Outcome: accepted: a balance of about 90 trillion units is unreachable in practice, so the upper bound stays without its own test row
+
+### r2 · slots-server reviews/pr-1/review.md #2 — `CENTS_AS_NUMBERS` names a cents rule but changes how every `int8` column is read
+- Where: `server/src/db/pool.ts:9-11` · `CENTS_AS_NUMBERS`
+- Code: `export const CENTS_AS_NUMBERS: CustomTypesConfig = {`
+- Why: design smell, `design-smells.md` row Mysterious Name: "a function, variable or type whose name hides what it does or holds". The parser is `oid === types.builtins.INT8 ? Number : types.getTypeParser(oid, format)`, so it applies to every `bigint` and `count(*)` result on the pool, not only to cents columns. `balance_cents` is the one cents column that is `int8` today; the next `bigint` column (an id, a counter) would be read as a lossy `Number` above 2^53 with nothing in the name saying so. `createPool` and `createTestDatabase` (`server/tests/helpers/db.ts:34`) share the constant.
+- How: name it for what it does, for example `INT8_AS_NUMBERS` | accept: the schema has one `int8` column and the hub client's safe-integer check bounds it.
+- Outcome: sent to the close
