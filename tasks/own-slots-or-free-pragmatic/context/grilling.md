@@ -49,6 +49,12 @@ Verdict written against `d2f3116d`: `SUFFICIENT`.
 
 Mechanical findings fixed without asking: SR12 (due time moved before each call, `SWEEP_LEASE_MS`), SR14 (counters `bet_sends` and `bet_busy_answers` replace the flag), SR15 (`tok-slow` definition), SR16 (`unavailable` clears the key).
 
+## Round 5 (build concerns T009-T011, 2026-11-06) — answered *fix the contract*
+
+| Q | Finding | Answer | Effect |
+|---|---|---|---|
+| Q24 | T009, T010, T011: the base, bonus, free-games and ladder figures are shares of the credited `winCents` weighted by engine units, while S4 said every win figure of the round equals the credited amount | "rewrite S4 so that the final figure of the round equals the credited amount and the intermediate figures are shares of it, adding up to it" | `ui-contract.md` S4 |
+
 ## Defaults taken by the spec (not asked; each goes to `plan.md` Decisions with its alternative)
 
 - The token is read from `?token=`, kept in `sessionStorage` and sent as `Authorization: Bearer`; the address bar keeps the token so a reload of the frame still opens the game.
